@@ -112,8 +112,4 @@ def validate(model, val_set, val_loader):
     acc = torch.sum(all_preds) / tgt.shape[0]
     print(acc)
 
-
-import torch.nn as nn
-import torch.linalg as L
-
 main()
