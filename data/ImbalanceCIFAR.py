@@ -156,6 +156,17 @@ class IMBALANCECIFAR10(torchvision.datasets.CIFAR10):
     def get_lang_inputs(self):
         text_inputs = [(f"a photo of a {c}") for c in self.classes]
         return text_inputs
+    
+    def get_class_subdivisions(self):
+        def subdivision(num_samples):
+            if num_samples > 100:
+                return "many"
+            elif num_samples > 20:
+                return "med"
+            else:
+                return "few"
+        
+        return [subdivision(num_samples) for num_samples in self.img_num_per_cls]
 
 
 class IMBALANCECIFAR100(IMBALANCECIFAR10):

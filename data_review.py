@@ -6,7 +6,7 @@ from models.simple import SimpleCLIPModel
 from utils import DEVICE
 
 def get_ang_dist():
-    model = SimpleCLIPModel(100).to(DEVICE)
+    model = SimpleCLIPModel().to(DEVICE)
     dr = './dataset/CIFAR100'
     train_set, train_loader = dataloader.load_data(dr, 'CIFAR100_LT', 'train', 4, num_workers=4, shuffle=True, cifar_imb_ratio=100, transform=model.preprocess)
     language_input = train_set.get_lang_inputs()

@@ -1,34 +1,28 @@
-import os
 import torch
 import torch.nn as nn
-import torch.linalg as lin
 import clip
 from utils import DEVICE
 
 class LanguageModel(nn.Module):
-    def __init__(self, num_classes, clip_encode):
+    def __init__(self, clip_encode):
         super(LanguageModel, self).__init__()
         self.clip_encode = clip_encode
-        # self.fc = nn.Linear(512, 512)
-
-    def get_parameters(self):
-        return self.fc.weight.data
 
     def forward(self, text_input):
         text_input = torch.cat([clip.tokenize(text) for text in text_input]).to(DEVICE)
         with torch.no_grad():
             clip_features = self.clip_encode(text_input).to(dtype=torch.float)
-        # mapped_features = self.fc(clip_features)
         return clip_features
 
 class VisualModel(nn.Module):
-    def __init__(self, num_classes, clip_encode):
+    def __init__(self, clip_encode):
         super(VisualModel, self).__init__()
         self.clip_encode = clip_encode
         self.fc = nn.Linear(512, 512)
+        self.fc.weight.data.copy_(torch.eye(512))
     
     def get_parameters(self):
-        return self.fc.weight.data
+        return self.fc.parameters()
 
     def forward(self, image_input):
         with torch.no_grad():
@@ -37,11 +31,11 @@ class VisualModel(nn.Module):
         return mapped_features
 
 class SimpleCLIPModel(nn.Module):
-    def __init__(self, num_classes, backbone="ViT-B/32"):
+    def __init__(self, backbone="ViT-B/32"):
         super(SimpleCLIPModel, self).__init__()
         encoders, self.preprocess = clip.load(backbone, DEVICE)
-        self.language_model = LanguageModel(num_classes, encoders.encode_text).to(DEVICE)
-        self.visual_model = VisualModel(num_classes, encoders.encode_image).to(DEVICE)
+        self.language_model = LanguageModel(encoders.encode_text).to(DEVICE)
+        self.visual_model = VisualModel(encoders.encode_image).to(DEVICE)
         self.cos = nn.CosineSimilarity(dim=-1)
 
     def forward(self, text_features, image_input):
