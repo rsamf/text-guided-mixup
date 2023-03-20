@@ -5,6 +5,10 @@ import torch.nn.functional as F
 from data import dataloader
 from models.simple import SimpleCLIPModel
 from utils import DEVICE, Evaluator
+import os.path
+
+def p(filename):
+    return os.path.join('data_review', filename)
 
 def get_ang_dist():
     model = SimpleCLIPModel().to(DEVICE)
@@ -21,7 +25,7 @@ def get_ang_dist():
     f_norm = L.vector_norm(f, dim=1, keepdim=True)
     f = f / f_norm
     cos_sim = f @ f.T
-    prob_set = cos_sim / torch.norm(cos_sim, dim=1)
+    prob_set = (1 - torch.eye(cos_sim.shape[0]).to(DEVICE)) * F.softmax(cos_sim, dim=1)
     max_val = 0
     min_val = 1
     max_i, max_j = 0, 0
@@ -30,7 +34,7 @@ def get_ang_dist():
     _i, _j = 0, 0
     max_sim_disjoint_sc = 0
     __i, __j = 0, 0
-    with open("./cosine_similarity_matrix.txt", "w") as f:
+    with open(p("./cosine_similarity_matrix.txt"), "w") as f:
         for i in range(100):
             for j in range(100):
                 val = cos_sim[i,j].item()
@@ -52,7 +56,7 @@ def get_ang_dist():
                         __i, __j = i, j
             f.write("\n")
 
-    with open("./prop_matrix.txt", "w") as f:
+    with open(p("./prop_matrix.txt"), "w") as f:
         for i in range(100):
             for j in range(100):
                 val = prob_set[i,j].item()
@@ -84,15 +88,7 @@ def get_ang_dist():
             for i in range(N):
                 cf_matrix[t[i]][pred[i]] += 1.0
 
-    cf_matrix_norm = cf_matrix/torch.norm(cf_matrix, dim=1)
-    with open("./cf_matrix_norm.txt", "w") as f:
-        for i in range(100):
-            for j in range(100):
-                val = cf_matrix_norm[i,j].item()
-                _str = f"({val:1.2f}) " if T[i] == T[j] else f" {val:1.2f}  "
-                f.write(_str)
-            f.write("\n")
-    with open("./cf_matrix.txt", "w") as f:
+    with open(p("./cf_matrix.txt"), "w") as f:
         for i in range(100):
             for j in range(100):
                 val = cf_matrix[i,j].item()
@@ -102,19 +98,19 @@ def get_ang_dist():
     
     selected_examples = ['apple', 'pear', 'crab', 'lobster', 'worm', 'snake']
     indexes_selected_examples = [set.classes.index(example) for example in selected_examples]
-    with open("./cf_matrix_norm_sel.txt", "w") as f:
+    with open(p("./cf_matrix_sel.txt"), "w") as f:
         for i in indexes_selected_examples:
             for j in indexes_selected_examples:
-                val = cf_matrix_norm[i][j]
+                val = cf_matrix[i][j]
                 _str = f" {val:1.2f} "
                 f.write(_str)
             f.write("\n")
 
-    with open("./prob_sel.txt", "w") as f:
+    with open(p("./prob_sel.txt"), "w") as f:
         for i in indexes_selected_examples:
             for j in indexes_selected_examples:
                 val = prob_set[i][j]
-                _str = f" {val:1.2f} "
+                _str = f" {val:1.5f} "
                 f.write(_str)
             f.write("\n")
 

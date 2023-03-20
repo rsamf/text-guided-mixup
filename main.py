@@ -2,7 +2,7 @@ import argparse
 import torch
 from utils import DEVICE, Evaluator, Validator
 # from train import decoupled_sc
-from train import softmax
+from train import cross_entropy
 from models.simple import SimpleCLIPModel
 from data import dataloader
 
@@ -32,7 +32,7 @@ def main():
     train_set, train_loader = dataloader.load_data(dr, 'CIFAR100_LT', 'train', 4, num_workers=4, shuffle=True, cifar_imb_ratio=100, transform=model.preprocess)
     val_set, val_loader = dataloader.load_data(dr, 'CIFAR100_LT', 'val', 4, num_workers=4, transform=model.preprocess)
     validator = Validator(model, val_set, val_loader, train_set.get_class_subdivisions())
-    softmax.train(model, train_set, train_loader, validator)
+    cross_entropy.train(model, train_set, train_loader, validator)
 
 
 
