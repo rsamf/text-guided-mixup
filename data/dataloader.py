@@ -1,17 +1,3 @@
-"""Copyright (c) Facebook, Inc. and its affiliates.
-All rights reserved.
-
-This source code is licensed under the license found in the
-LICENSE file in the root directory of this source tree.
-
-Portions of the source code are from the OLTR project which
-notice below and in LICENSE in the root directory of
-this source tree.
-
-Copyright (c) 2019, Zhongqi Miao
-All rights reserved.
-"""
-
 import json
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from torchvision import transforms
@@ -113,7 +99,6 @@ def load_data(data_root, dataset, phase, batch_size, sampler_dic=None, num_worke
     else:
         txt_split = phase
     txt = './data/%s/%s_%s.txt'%(dataset, dataset, txt_split)
-    # txt = './data/%s/%s_%s.txt'%(dataset, dataset, (phase if phase != 'train_plain' else 'train'))
 
     print('Loading data from %s' % (txt))
 
@@ -124,10 +109,10 @@ def load_data(data_root, dataset, phase, batch_size, sampler_dic=None, num_worke
     else:
         key = 'default'
 
-    if dataset == 'CIFAR10_LT':
+    if dataset == 'CIFAR10':
         print('====> CIFAR10 Imbalance Ratio: ', cifar_imb_ratio)
         set_ = IMBALANCECIFAR10(phase, imbalance_ratio=cifar_imb_ratio, root=data_root, transform=transform)
-    elif dataset == 'CIFAR100_LT':
+    elif dataset == 'CIFAR100':
         print('====> CIFAR100 Imbalance Ratio: ', cifar_imb_ratio)
         set_ = IMBALANCECIFAR100(phase, imbalance_ratio=cifar_imb_ratio, root=data_root, transform=transform)
     else:

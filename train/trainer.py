@@ -3,17 +3,15 @@ import torch.nn as nn
 import torch.optim as optim
 from utils import DEVICE, writer, Evaluator
 
-def train(model, train_set, train_loader, validator):
-    loss_fn = nn.CrossEntropyLoss()
+def train(model, train_set, train_loader, validator, loss_fn, epochs, lr):
     with torch.no_grad():
         language_features = model.language_model(train_set.get_lang_inputs())
 
-    optimizer = optim.Adam(model.visual_model.get_parameters())
+    optimizer = optim.Adam(model.visual_model.get_parameters(), lr)
     evaluator = Evaluator(train_set.get_class_subdivisions())
-    report_accuracy(evaluator, validator, 0)
-    EPOCHS = 10
+    report_accuracy(None, validator, 0)
     step = 0
-    for _ in range(EPOCHS):
+    for _ in range(epochs):
         for x, tgt, _ in train_loader:
             step += 1
             x = x.to(DEVICE)
@@ -29,12 +27,13 @@ def train(model, train_set, train_loader, validator):
         report_accuracy(evaluator, validator, step)
 
 def report_accuracy(evaluator, validator, step):
-    # Log training accuracy
-    all, many, med, few = evaluator.accuracy()
-    writer.add_scalar("Train/Accuracy/All", all.item(), step)
-    writer.add_scalar("Train/Accuracy/Many", many.item(), step)
-    writer.add_scalar("Train/Accuracy/Med", med.item(), step)
-    writer.add_scalar("Train/Accuracy/Few", few.item(), step)
+    if evaluator:
+        # Log training accuracy
+        all, many, med, few = evaluator.accuracy()
+        writer.add_scalar("Train/Accuracy/All", all.item(), step)
+        writer.add_scalar("Train/Accuracy/Many", many.item(), step)
+        writer.add_scalar("Train/Accuracy/Med", med.item(), step)
+        writer.add_scalar("Train/Accuracy/Few", few.item(), step)
     # Log validation accuracy
     all, many, med, few = validator.accuracy()
     writer.add_scalar("Validation/Accuracy/All", all.item(), step)
