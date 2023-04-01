@@ -10,14 +10,12 @@ class BalancedCE(_Loss):
     """
     Balanced Softmax Loss
     """
-    def __init__(self, freq_path="cls_freq/CIFAR-100-LT_IMBA100.json"):
+    def __init__(self, freq, reduction='mean'):
         super(BalancedCE, self).__init__()
-        with open(freq_path, 'r') as fd:
-            freq = json.load(fd)
-        freq = torch.tensor(freq)
         self.sample_per_class = freq
+        self.reduction = reduction
 
-    def forward(self, input, labels, reduction='mean'):
+    def forward(self, input, labels):
         """Compute the Balanced Softmax Loss between `logits` and the ground truth `labels`.
         Args:
         labels: A int tensor of size [batch].
@@ -30,7 +28,7 @@ class BalancedCE(_Loss):
         spc = self.sample_per_class.type_as(input)
         spc = spc.unsqueeze(0).expand(input.shape[0], -1)
         logits = input + spc.log()
-        loss = F.cross_entropy(logits, target=labels, reduction=reduction)
+        loss = F.cross_entropy(logits, target=labels, reduction=self.reduction)
         return loss
     
 # https://github.com/XuZhengzhuo/LiVT/blob/68546ef189c486caa271066d8bfa25ec214192df/util/loss.py
@@ -123,10 +121,8 @@ class FocalLoss(nn.Module):
 
 # https://github.com/kaidic/LDAM-DRW/blob/master/losses.py
 class LDAMLoss(nn.Module):
-    def __init__(self, freq_path="cls_freq/CIFAR-100-LT_IMBA100.json", max_m=0.5, weight=None, s=30):
+    def __init__(self, freq, max_m=0.5, weight=None, s=30, reduction='mean'):
         super(LDAMLoss, self).__init__()
-        with open(freq_path, 'r') as fd:
-            freq = json.load(fd)
         freq = np.array(freq)
         m_list = 1.0 / np.sqrt(np.sqrt(freq))
         m_list = m_list * (max_m / np.max(m_list))
@@ -135,6 +131,7 @@ class LDAMLoss(nn.Module):
         assert s > 0
         self.s = s
         self.weight = weight
+        self.reduction=reduction
 
     def forward(self, x, target):
         index = torch.zeros_like(x, dtype=torch.uint8)
@@ -146,7 +143,7 @@ class LDAMLoss(nn.Module):
         x_m = x - batch_m
     
         output = torch.where(index, x_m, x)
-        return F.cross_entropy(self.s*output, target, weight=self.weight)
+        return F.cross_entropy(self.s*output, target, weight=self.weight, reduction=self.reduction)
 
 ## Unused
 # class AFS(_Loss):

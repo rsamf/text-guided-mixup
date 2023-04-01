@@ -1,5 +1,5 @@
 loss: BalCE
 dataset: CIFAR100
-epochs: 20
-batch_size: 8
-lr: .001
+epochs: 30
+batch_size: 64
+lr: .0001

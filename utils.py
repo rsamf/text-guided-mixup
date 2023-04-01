@@ -1,32 +1,37 @@
 import torch
-from torch.utils.tensorboard import SummaryWriter
 
-writer = SummaryWriter()
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class Validator():
-    def __init__(self, model, val_set, val_loader, class_subdivisions):
+    def __init__(self, model, val_set, val_loader, class_subdivisions, loss_fn):
         self.model = model
         self.val_set = val_set
         self.val_loader = val_loader
         self.class_subdivisions = class_subdivisions
+        self.evaluator = Evaluator(class_subdivisions, loss_fn)
 
     def accuracy(self):
+        return self.evaluator.accuracy()
+
+    def loss(self):
+        return self.evaluator.loss()
+
+    def evaluate(self):
+        self.evaluator.refresh()
         with torch.no_grad():
             language_features = self.model.language_model(self.val_set.get_lang_inputs())
-            evaluator = Evaluator(self.class_subdivisions)
             for x, tgt, _ in self.val_loader:
                 x = x.to(DEVICE)
                 tgt = tgt.to(DEVICE)
                 logits, _ = self.model(language_features, x)
-                evaluator.update(logits, tgt)
-            return evaluator.accuracy()
+                self.evaluator.update(logits, tgt)
 
 class Evaluator():
-    def __init__(self, class_subdivisions):
+    def __init__(self, class_subdivisions, loss_fn):
         self.logits = []
         self.tgts = []
         self.class_subdivisions = class_subdivisions
+        self.loss_fn = loss_fn
 
     def update(self, logits, tgts):
         self.logits.append(logits)
@@ -38,6 +43,12 @@ class Evaluator():
     def refresh(self):
         self.logits = []
         self.tgts = []
+    
+    def loss(self):
+        logits, tgts = self.get_tensors()
+        if tgts.shape[0] == 0:
+            return torch.zeros(1)
+        return self.loss_fn(logits, tgts)
 
     def accuracy(self):
         def acc(logits, tgts):
@@ -69,4 +80,3 @@ class Evaluator():
         med_l, med_t = torch.stack(med_l), torch.stack(med_t)
         few_l, few_t = torch.stack(few_l), torch.stack(few_t)
         return acc(all_l, all_t), acc(many_l, many_t), acc(med_l, med_t), acc(few_l, few_t)
-            
