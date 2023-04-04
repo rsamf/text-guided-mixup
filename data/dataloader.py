@@ -1,10 +1,12 @@
+import torch
 import json
-from torch.utils.data import Dataset, DataLoader, ConcatDataset
+import numpy as np
+from random import choices
+from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 from torchvision import transforms
 import os
 from PIL import Image
 from data.ImbalanceCIFAR import IMBALANCECIFAR10, IMBALANCECIFAR100
-
 
 # Image statistics
 RGB_statistics = {
@@ -51,8 +53,7 @@ def get_data_transform(split, rgb_mean, rbg_std, key='default'):
 
 # Dataset
 class LT_Dataset(Dataset):
-
-    def __init__(self, root, txt, dataset, transform=None, meta=False):
+    def __init__(self, root, txt, dataset, transform=None):
         self.img_path = []
         self.labels = []
         self.transform = transform
@@ -63,7 +64,7 @@ class LT_Dataset(Dataset):
                 self.labels.append(int(line.split()[1]))
 
         # save the class frequency
-        if 'train' in txt and not meta:
+        if 'train' in txt:
             if not os.path.exists('cls_freq'):
                 os.makedirs('cls_freq')
             freq_path = os.path.join('cls_freq', dataset + '.json')
@@ -77,7 +78,6 @@ class LT_Dataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, index):
-
         path = self.img_path[index]
         label = self.labels[index]
 
@@ -89,8 +89,48 @@ class LT_Dataset(Dataset):
 
         return sample, label, index
 
-# Load datasets
-def load_data(data_root, dataset, phase, batch_size, sampler_dic=None, num_workers=4, shuffle=True, cifar_imb_ratio=None, meta=False, transform=None):
+class LocalClassLoader(DataLoader):
+    def __init__(self, dataset, batch_size, num_workers, probability_matrix=None):
+        super(LocalClassLoader, self).__init__(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=self.collate_fn)
+        self.probability_matrix = probability_matrix
+        self.num_classes = self.dataset.get_num_classes()
+        
+        if self.probability_matrix != None:
+            self.samplers = []
+            targets = torch.tensor(self.dataset.targets)
+            for i in range(self.num_classes):
+                possible_alt_img = (targets == i).nonzero()
+                self.samplers.append(SubsetRandomSampler(possible_alt_img).__iter__())
+
+    def collate_fn(self, batch):
+        imgs1 = []
+        tgts1 = []
+        indexes1 = []
+        imgs2 = []
+        tgts2 = []
+        indexes2 = []
+        for x1, y1, i1 in batch:
+            imgs1.append(x1)
+            tgts1.append(y1)
+            indexes1.append(i1)
+            if self.probability_matrix != None:
+                prob_dist = self.probability_matrix[y1]
+                y2 = choices(range(self.num_classes), prob_dist)[0]
+                i2 = next(self.samplers[y2])
+                x2 = self.dataset[i2][0]
+                imgs2.append(x2)
+                tgts2.append(y2)
+                indexes2.append(i2)
+        imgs1 = torch.stack(imgs1)
+        tgts1 = torch.from_numpy(np.asarray(tgts1))
+
+        if self.probability_matrix != None:
+            imgs2 = torch.stack(imgs2)
+            tgts2 = torch.from_numpy(np.asarray(tgts2))
+            return imgs1, tgts1, indexes1, imgs2, tgts2, indexes2
+        return imgs1, tgts1, indexes1
+
+def get_dataset(data_root, dataset, phase, cifar_imb_ratio=None, transform=None):
     if phase == 'train_plain':
         txt_split = 'train'
     elif phase == 'train_val':
@@ -99,9 +139,7 @@ def load_data(data_root, dataset, phase, batch_size, sampler_dic=None, num_worke
     else:
         txt_split = phase
     txt = './data/%s/%s_%s.txt'%(dataset, dataset, txt_split)
-
     print('Loading data from %s' % (txt))
-
 
     if dataset == 'iNaturalist18':
         print('===> Loading iNaturalist18 statistics')
@@ -123,27 +161,10 @@ def load_data(data_root, dataset, phase, batch_size, sampler_dic=None, num_worke
             transform = get_data_transform(phase, rgb_mean, rgb_std, key)
 
         print('Use data transformation:', transform)
+        set_ = LT_Dataset(data_root, txt, dataset, transform)
+    return set_
 
-        set_ = LT_Dataset(data_root, txt, dataset, transform, meta)
-
-
-    print(len(set_))
-
-    if sampler_dic and phase == 'train' and sampler_dic.get('batch_sampler', False):
-        print('Using sampler: ', sampler_dic['sampler'])
-        return set_, DataLoader(dataset=set_,
-                           batch_sampler=sampler_dic['sampler'](set_, **sampler_dic['params']),
-                           num_workers=num_workers)
-
-    elif sampler_dic and (phase == 'train' or meta):
-        print('Using sampler: ', sampler_dic['sampler'])
-        # print('Sample %s samples per-class.' % sampler_dic['num_samples_cls'])
-        print('Sampler parameters: ', sampler_dic['params'])
-        return set_, DataLoader(dataset=set_, batch_size=batch_size, shuffle=False,
-                           sampler=sampler_dic['sampler'](set_, **sampler_dic['params']),
-                           num_workers=num_workers)
-    else:
-        print('No sampler.')
-        print('Shuffle is %s.' % (shuffle))
-        return set_, DataLoader(dataset=set_, batch_size=batch_size,
-                          shuffle=shuffle, num_workers=num_workers)
+def get_dataloader(dataset, batch_size, num_workers=4, p_matrix=None):
+    if p_matrix != None:
+        return LocalClassLoader(dataset, batch_size=batch_size, num_workers=num_workers, probability_matrix=p_matrix)
+    return DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)

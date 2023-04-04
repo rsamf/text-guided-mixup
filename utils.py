@@ -1,4 +1,6 @@
 import torch
+import torch.linalg as L
+
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -80,3 +82,16 @@ class Evaluator():
         med_l, med_t = torch.stack(med_l), torch.stack(med_t)
         few_l, few_t = torch.stack(few_l), torch.stack(few_t)
         return acc(all_l, all_t), acc(many_l, many_t), acc(med_l, med_t), acc(few_l, few_t)
+
+
+def get_sample_probability_matrix(language_model, language_input):
+    with torch.no_grad():
+        f = language_model(language_input)
+
+    f_norm = L.vector_norm(f, dim=1, keepdim=True)
+    f = f / f_norm
+    cos_sim = f @ f.T
+    prob_set = (1 - torch.eye(cos_sim.shape[0]).to(DEVICE)) * cos_sim
+    div = torch.sum(prob_set, dim=1, keepdim=True)
+    prob_set = prob_set / div
+    return prob_set.to(device='cpu')
