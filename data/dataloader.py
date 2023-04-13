@@ -110,13 +110,12 @@ class ResettableSubsetSampler(SubsetRandomSampler):
         self.iterator = super().__iter__()
         self.sample_count = 0
 
-class LocalClassSampler(Sampler):
+class LocalClassSampler(RandomSampler):
     def __init__(self, dataset, probability_matrix):
         super(LocalClassSampler, self).__init__(dataset)
         self.dataset = dataset
         self.probability_matrix = probability_matrix
         self.num_classes = self.dataset.get_num_classes()
-        self.random_sampler = RandomSampler(dataset).__iter__()
         self.samplers = []
         self.targets = torch.tensor(self.dataset.targets)
         for i in range(self.num_classes):
@@ -130,20 +129,15 @@ class LocalClassSampler(Sampler):
         return j_index
 
     def __iter__(self):
-        for i_index in self.random_sampler:
+        random_sampler = super().__iter__()
+        for i_index in random_sampler:
             i = self.dataset.targets[i_index]
             j_index = self.get_next_j_sample(i)
-            yield [i_index, j_index]
+            yield i_index
+            yield j_index # collate_fn will need to capture the odd indices
 
-class LocalClassBatchSampler(BatchSampler):
-    def __init__(self, sampler, batch_size):
-        super(LocalClassBatchSampler, self).__init__(sampler, batch_size, drop_last=False)
-        self.base_sampler = super().__iter__()
-
-    def __iter__(self):
-        for batch in self.base_sampler:
-            flattened = [idx for ij_samples in batch for idx in ij_samples]
-            yield flattened
+    def __len__(self):
+        return self.num_samples * 2
 
 # Output: [2, B, 3, 224, 224]
 def pair_local_samples(batch):
@@ -155,7 +149,6 @@ def pair_local_samples(batch):
     idx_j = []
     i = 0
     for x, y, idx in batch:
-        # y = y.astype(int)
         if i % 2 == 0:
             x_i.append(x)
             y_i.append(y)
@@ -213,10 +206,10 @@ def get_dataloader(dataset, batch_size, num_workers=4, p_matrix=None):
         # return LocalClassLoader(dataset, batch_size=batch_size, num_workers=num_workers, probability_matrix=p_matrix)
     if p_matrix != None:
         sampler = LocalClassSampler(dataset, p_matrix)
-        batch_sampler = LocalClassBatchSampler(sampler, batch_size)
         return DataLoader(dataset, 
                         num_workers=num_workers,
-                        batch_sampler=batch_sampler,
+                        sampler=sampler,
+                        batch_size=batch_size*2,
                         collate_fn=pair_local_samples)
     else:
         return DataLoader(dataset, 

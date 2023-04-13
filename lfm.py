@@ -13,14 +13,18 @@ class LocalFeatureMixup():
         y_i_onehot = F.one_hot(y_i, num_classes=self.num_classes)
         y_j_onehot = F.one_hot(y_j, num_classes=self.num_classes)
         n_i, n_j = self.freq[y_i], self.freq[y_j]
+        # print(y_i_onehot.shape, n_i.shape, x_i.shape)
         # Generate x sample
         # lambda_x = self.beta_dist.sample_n(y_i_onehot.shape[0])
-        lambda_x = self.beta_dist.sample()
+        lambda_x = self.beta_dist.sample()[0]
+        # print(lambda_x.shape)
         x_gen = lambda_x * x_i + (1 - lambda_x) * x_j
         # Generate y target
         # lambda_x = lambda_x.view(-1,1).expand_as(y_i_onehot)
         y_offset = self.alpha * (n_i - n_j) / (n_i + n_j)
-        # y_offset = y_offset.view(-1,1).expand_as(y_i_onehot)
+        # 
         lambda_y = lambda_x + y_offset
+        lambda_y = lambda_y.unsqueeze(1).expand_as(y_i_onehot)
+        # print(lambda_y.shape, y_i_onehot.shape)
         y_gen = lambda_y * y_i_onehot + (1 - lambda_y) * y_j_onehot
         return x_gen, y_gen

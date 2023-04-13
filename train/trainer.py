@@ -8,7 +8,7 @@ from lfm import LocalFeatureMixup
 def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, freq, writer):
     optimizer = optim.Adam(model.visual_model.get_parameters(), lr)
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn)
-    mixer = LocalFeatureMixup(1, freq)
+    mixer = LocalFeatureMixup(.5, freq)
     with torch.no_grad():
         language_features = model.language_model(train_set.get_lang_inputs())
 
@@ -36,19 +36,19 @@ def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lf
         loss.backward()
         optimizer.step()
         evaluator.update(pred, y)
-        # exit()
 
-    # report_metrics(None, validator, 0, writer)
+    report_metrics(None, validator, 0, writer)
     step = 0
     train_step = train_step_default if not use_lfm else train_step_lfm
-    for _ in range(epochs):
+    for i in range(epochs):
+        print(f"epoch {i}")
         for batch in train_loader:
             train_step(batch)
-        #     step += 1
-        # if use_lfm:
-        #     report_metrics(None, validator, step, writer)
-        # else:
-        #     report_metrics(evaluator, validator, step, writer)
+            step += 1
+        if use_lfm:
+            report_metrics(None, validator, step, writer)
+        else:
+            report_metrics(evaluator, validator, step, writer)
 
 def report_metrics(evaluator, validator, step, writer):
     # Log validation accuracy

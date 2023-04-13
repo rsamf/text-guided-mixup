@@ -144,29 +144,3 @@ class LDAMLoss(nn.Module):
     
         output = torch.where(index, x_m, x)
         return F.cross_entropy(self.s*output, target, weight=self.weight, reduction=self.reduction)
-
-## Unused
-# class AFS(_Loss):
-#     def __init__(self, margin=.6):
-#         super(AFS, self).__init__()
-#         self.margin = torch.tensor(margin).to(DEVICE)
-#         self.cos = nn.CosineSimilarity(dim=0)
-
-#     def ang_dist(self, w_i, w_j):
-#         return self.cos(w_i, w_j)
-
-#     def indicator(self, ang_dist):
-#         # if weights are close enough (within margin), then enable
-#         return (ang_dist > self.margin).to(dtype=torch.long)
-
-#     def forward(self, W):
-#         N = W.shape[0]
-#         sum = 0
-#         sum_still_in_margin = 0
-#         for i in range(N):
-#             for j in range(N):
-#                 ang = self.ang_dist(W[i], W[j]) if i != j else 0
-#                 ind = self.indicator(ang)
-#                 sum += -torch.log(-ang * ind + 1)
-#                 sum_still_in_margin += ind
-#         return sum / sum_still_in_margin if sum_still_in_margin > 0 else 0
