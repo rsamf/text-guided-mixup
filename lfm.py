@@ -23,7 +23,8 @@ class LocalFeatureMixup():
         # lambda_x = lambda_x.view(-1,1).expand_as(y_i_onehot)
         y_offset = self.alpha * (n_i - n_j) / (n_i + n_j)
         # 
-        lambda_y = lambda_x + y_offset
+        lambda_y = torch.clamp(lambda_x + y_offset, 0, 1)
+        # lambda_y = lambda_x + y_offset
         lambda_y = lambda_y.unsqueeze(1).expand_as(y_i_onehot)
         # print(lambda_y.shape, y_i_onehot.shape)
         y_gen = lambda_y * y_i_onehot + (1 - lambda_y) * y_j_onehot

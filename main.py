@@ -1,5 +1,5 @@
 import argparse
-from utils import DEVICE, Validator, get_sample_probability_matrix
+from utils import DEVICE, Validator, get_sample_probability_matrix, get_text_distances
 from train import trainer
 from models.simple import SimpleCLIPModel
 from data import dataloader
@@ -47,10 +47,11 @@ loss_str = args.loss or yml.get("loss")
 dataset_str = args.dataset or yml.get("dataset")
 lr = args.lr or yml.get("lr")
 use_lfm = args.use_lfm or yml.get("use_lfm")
+alpha = yml.get("alpha")
 
 freq = get_freq()
 
-def setup_loss_fn(loss_str):
+def setup_loss_fn(loss_str, model, language_input):
     if loss_str == 'CE':
         return CrossEntropyLoss(reduction='mean')
     if loss_str == 'BalCE':
@@ -61,6 +62,8 @@ def setup_loss_fn(loss_str):
         return losses.FocalLoss()
     if loss_str == 'LDAM':
         return losses.LDAMLoss(freq, reduction='mean')
+    if loss_str == 'MMS':
+        return losses.MarginMetricSoftmax(get_text_distances(model.language_model, language_input), reduction='mean')
 
 def main():
     dr = data_root[dataset_str]
@@ -73,12 +76,12 @@ def main():
         language_input = train_set.get_lang_inputs()
         p_matrix = get_sample_probability_matrix(model.language_model, language_input)
 
-    train_loader = dataloader.get_dataloader(train_set, batch_size, num_workers=1, p_matrix=p_matrix)
-    val_loader = dataloader.get_dataloader(val_set, batch_size, num_workers=1)
-    loss_fn = setup_loss_fn(loss_str)
+    train_loader = dataloader.get_dataloader(train_set, batch_size, num_workers=4, p_matrix=p_matrix)
+    val_loader = dataloader.get_dataloader(val_set, batch_size, num_workers=4)
+    loss_fn = setup_loss_fn(loss_str, model, train_set.get_lang_inputs())
     validator = Validator(model, val_set, val_loader, train_set.get_class_subdivisions(), loss_fn)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     writer = SummaryWriter(f'runs/{loss_str}-{date}')
-    trainer.train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, freq, writer)
+    trainer.train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer)
 
 main()

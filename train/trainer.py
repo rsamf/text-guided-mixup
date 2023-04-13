@@ -5,10 +5,10 @@ from utils import DEVICE, Evaluator
 from lfm import LocalFeatureMixup
 
 
-def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, freq, writer):
+def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer):
     optimizer = optim.Adam(model.visual_model.get_parameters(), lr)
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn)
-    mixer = LocalFeatureMixup(.5, freq)
+    mixer = LocalFeatureMixup(alpha, freq)
     with torch.no_grad():
         language_features = model.language_model(train_set.get_lang_inputs())
 

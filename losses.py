@@ -144,3 +144,15 @@ class LDAMLoss(nn.Module):
     
         output = torch.where(index, x_m, x)
         return F.cross_entropy(self.s*output, target, weight=self.weight, reduction=self.reduction)
+
+class MarginMetricSoftmax(_Loss):
+    def __init__(self, text_distances, l=.3, temp=.01, reduction='mean'):
+        super(MarginMetricSoftmax, self).__init__()
+        self.reduction = reduction
+        self.logits_offset = l*text_distances
+        self.temp = temp
+
+    def forward(self, input, labels):
+        logits = (input + self.logits_offset) / self.temp
+        loss = F.cross_entropy(logits, target=labels, reduction=self.reduction)
+        return loss

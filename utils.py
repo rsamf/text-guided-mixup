@@ -95,3 +95,13 @@ def get_sample_probability_matrix(language_model, language_input):
     div = torch.sum(prob_set, dim=1, keepdim=True)
     prob_set = prob_set / div
     return prob_set.to(device='cpu')
+
+def get_text_distances(language_model, language_input):
+    with torch.no_grad():
+        f = language_model(language_input)
+
+    f_norm = L.vector_norm(f, dim=1, keepdim=True)
+    f = f / f_norm
+    cos_sim = f @ f.T
+    dist = 1-cos_sim
+    return dist
