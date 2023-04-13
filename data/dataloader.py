@@ -2,8 +2,9 @@ import torch
 import json
 import numpy as np
 from random import choices
-from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
+from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, Sampler, RandomSampler, BatchSampler
 from torchvision import transforms
+import torch.nn.functional as F
 import os
 from PIL import Image
 from data.ImbalanceCIFAR import IMBALANCECIFAR10, IMBALANCECIFAR100
@@ -89,46 +90,89 @@ class LT_Dataset(Dataset):
 
         return sample, label, index
 
-class LocalClassLoader(DataLoader):
-    def __init__(self, dataset, batch_size, num_workers, probability_matrix=None):
-        super(LocalClassLoader, self).__init__(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=self.collate_fn)
+class ResettableSubsetSampler(SubsetRandomSampler):
+    def __init__(self, indices):
+        super(ResettableSubsetSampler, self).__init__(indices)
+        self.reset()
+        self.sample_count = 0
+
+    def __iter__(self):
+        for sample in self.iterator:
+            yield sample
+
+    def sample(self):
+        if self.sample_count == len(self):
+            self.reset()
+        self.sample_count += 1
+        return next(self.iterator)
+
+    def reset(self):
+        self.iterator = super().__iter__()
+        self.sample_count = 0
+
+class LocalClassSampler(Sampler):
+    def __init__(self, dataset, probability_matrix):
+        super(LocalClassSampler, self).__init__(dataset)
+        self.dataset = dataset
         self.probability_matrix = probability_matrix
         self.num_classes = self.dataset.get_num_classes()
-        
-        if self.probability_matrix != None:
-            self.samplers = []
-            targets = torch.tensor(self.dataset.targets)
-            for i in range(self.num_classes):
-                possible_alt_img = (targets == i).nonzero()
-                self.samplers.append(SubsetRandomSampler(possible_alt_img).__iter__())
+        self.random_sampler = RandomSampler(dataset).__iter__()
+        self.samplers = []
+        self.targets = torch.tensor(self.dataset.targets)
+        for i in range(self.num_classes):
+            possible_alt_img = (self.targets == i).nonzero()
+            self.samplers.append(ResettableSubsetSampler(possible_alt_img))
 
-    def collate_fn(self, batch):
-        imgs1 = []
-        tgts1 = []
-        indexes1 = []
-        imgs2 = []
-        tgts2 = []
-        indexes2 = []
-        for x1, y1, i1 in batch:
-            imgs1.append(x1)
-            tgts1.append(y1)
-            indexes1.append(i1)
-            if self.probability_matrix != None:
-                prob_dist = self.probability_matrix[y1]
-                y2 = choices(range(self.num_classes), prob_dist)[0]
-                i2 = next(self.samplers[y2])
-                x2 = self.dataset[i2][0]
-                imgs2.append(x2)
-                tgts2.append(y2)
-                indexes2.append(i2)
-        imgs1 = torch.stack(imgs1)
-        tgts1 = torch.from_numpy(np.asarray(tgts1))
+    def get_next_j_sample(self, i):
+        prob_dist = self.probability_matrix[i]
+        j = choices(range(self.num_classes), prob_dist)[0]
+        j_index = self.samplers[j].sample()
+        return j_index
 
-        if self.probability_matrix != None:
-            imgs2 = torch.stack(imgs2)
-            tgts2 = torch.from_numpy(np.asarray(tgts2))
-            return imgs1, tgts1, indexes1, imgs2, tgts2, indexes2
-        return imgs1, tgts1, indexes1
+    def __iter__(self):
+        for i_index in self.random_sampler:
+            i = self.dataset.targets[i_index]
+            j_index = self.get_next_j_sample(i)
+            yield [i_index, j_index]
+
+class LocalClassBatchSampler(BatchSampler):
+    def __init__(self, sampler, batch_size):
+        super(LocalClassBatchSampler, self).__init__(sampler, batch_size, drop_last=False)
+        self.base_sampler = super().__iter__()
+
+    def __iter__(self):
+        for batch in self.base_sampler:
+            flattened = [idx for ij_samples in batch for idx in ij_samples]
+            yield flattened
+
+# Output: [2, B, 3, 224, 224]
+def pair_local_samples(batch):
+    x_i = []
+    x_j = []
+    y_i = []
+    y_j = []
+    idx_i = []
+    idx_j = []
+    i = 0
+    for x, y, idx in batch:
+        # y = y.astype(int)
+        if i % 2 == 0:
+            x_i.append(x)
+            y_i.append(y)
+            idx_i.append(idx)
+        else:
+            x_j.append(x)
+            y_j.append(y)
+            idx_j.append(idx)
+        i+=1
+    x_i = torch.stack(x_i)
+    x_j = torch.stack(x_j)
+    y_i = torch.tensor(y_i)
+    y_j = torch.tensor(y_j)
+    x = torch.stack([x_i, x_j])
+    y = torch.stack([y_i, y_j])
+    idx = [idx_i, idx_j]
+    return x, y, idx
 
 def get_dataset(data_root, dataset, phase, cifar_imb_ratio=None, transform=None):
     if phase == 'train_plain':
@@ -165,6 +209,16 @@ def get_dataset(data_root, dataset, phase, cifar_imb_ratio=None, transform=None)
     return set_
 
 def get_dataloader(dataset, batch_size, num_workers=4, p_matrix=None):
+    # if p_matrix != None:
+        # return LocalClassLoader(dataset, batch_size=batch_size, num_workers=num_workers, probability_matrix=p_matrix)
     if p_matrix != None:
-        return LocalClassLoader(dataset, batch_size=batch_size, num_workers=num_workers, probability_matrix=p_matrix)
-    return DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
+        sampler = LocalClassSampler(dataset, p_matrix)
+        batch_sampler = LocalClassBatchSampler(sampler, batch_size)
+        return DataLoader(dataset, 
+                        num_workers=num_workers,
+                        batch_sampler=batch_sampler,
+                        collate_fn=pair_local_samples)
+    else:
+        return DataLoader(dataset, 
+                batch_size=batch_size,
+                num_workers=num_workers)

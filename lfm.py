@@ -1,32 +1,26 @@
 import torch
 from torch.distributions.beta import Beta
+import torch.nn.functional as F
 
 class LocalFeatureMixup():
-    def __init__(self, alpha, freq, prob_sample, cls_sampler):
+    def __init__(self, alpha, freq):
         self.alpha = alpha
         self.beta_dist = Beta(torch.tensor([.5]), torch.tensor([.5]))
         self.freq = freq
-        self.prob_sample = prob_sample
+        self.num_classes = self.freq.shape[0]
 
-    def mix(self, x, y, n):
-        x_i, x_j = x
-        y_i, y_j = y
-        n_i, n_j = n
+    def mix(self, x_i, y_i, x_j, y_j):
+        y_i_onehot = F.one_hot(y_i, num_classes=self.num_classes)
+        y_j_onehot = F.one_hot(y_j, num_classes=self.num_classes)
+        n_i, n_j = self.freq[y_i], self.freq[y_j]
+        # Generate x sample
+        # lambda_x = self.beta_dist.sample_n(y_i_onehot.shape[0])
         lambda_x = self.beta_dist.sample()
-        lambda_y = lambda_x + self.alpha * (n_i - n_j) / (n_i + n_j)
         x_gen = lambda_x * x_i + (1 - lambda_x) * x_j
-        y_gen = lambda_y * y_i + (1 - lambda_y) * y_j
+        # Generate y target
+        # lambda_x = lambda_x.view(-1,1).expand_as(y_i_onehot)
+        y_offset = self.alpha * (n_i - n_j) / (n_i + n_j)
+        # y_offset = y_offset.view(-1,1).expand_as(y_i_onehot)
+        lambda_y = lambda_x + y_offset
+        y_gen = lambda_y * y_i_onehot + (1 - lambda_y) * y_j_onehot
         return x_gen, y_gen
-    
-    # def setup_sample(self, i, x_i, y_i):
-    #     j = i #TODO: sample j from prob dist
-    #     x_j, y_j = self.cls_sampler(j)
-    #     x = x_i, x_j
-    #     y = y_i, y_j
-    #     n = self.freq[i], self.freq[j]
-    #     return x, y, n
-    
-    def get_x_y(self, x, y, n):
-        # x, y, n = self.setup_sample(i, x_i, y_i)
-        x_lfm, y_lfm = self.mix(x, y, n)
-        return x_lfm, y_lfm
