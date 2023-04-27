@@ -1,6 +1,6 @@
 import torch
 import torch.linalg as L
-
+import torch.nn.functional as F
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -20,6 +20,7 @@ class Validator():
 
     def evaluate(self):
         self.evaluator.refresh()
+        self.model.eval()
         with torch.no_grad():
             language_features = self.model.language_model(self.val_set.get_lang_inputs())
             for x, tgt, _ in self.val_loader:
@@ -84,17 +85,49 @@ class Evaluator():
         return acc(all_l, all_t), acc(many_l, many_t), acc(med_l, med_t), acc(few_l, few_t)
 
 
-def get_sample_probability_matrix(language_model, language_input):
+def get_sample_probability_matrix_norm(language_model, language_input):
     with torch.no_grad():
         f = language_model(language_input)
 
     f_norm = L.vector_norm(f, dim=1, keepdim=True)
     f = f / f_norm
     cos_sim = f @ f.T
-    prob_set = (1 - torch.eye(cos_sim.shape[0]).to(DEVICE)) * cos_sim
+    I_d = torch.eye(cos_sim.shape[0]).to(DEVICE)
+    prob_set = (1 - I_d) * cos_sim
     div = torch.sum(prob_set, dim=1, keepdim=True)
     prob_set = prob_set / div
+
     return prob_set.to(device='cpu')
+
+def get_sample_probability_matrix_softmax(language_model, language_input, class_list=None, top_k=0):
+    with torch.no_grad():
+        f = language_model(language_input)
+
+    f_norm = L.vector_norm(f, dim=1, keepdim=True)
+    f = f / f_norm
+    cos_sim = f @ f.T
+    I_d = torch.eye(cos_sim.shape[0]).to(DEVICE)
+    prob_set = ((1 - I_d).T * cos_sim) + (I_d * -1e9)
+    prob_set = F.softmax(prob_set, dim=1)
+    prob_set *= 100
+    if top_k > 0 and class_list != None:
+        num_classes = len(class_list)
+        _, idx = torch.topk(prob_set, dim=1, k=num_classes-top_k, largest=False)
+        for i in range(prob_set.shape[0]):
+            prob_set[i] = torch.index_fill(prob_set[i], dim=0, index=idx[i], value=-1e10)
+        prob_set = F.softmax(prob_set, dim=1)
+        show_closest_to(prob_set, class_list, top_k + 2)
+
+    return prob_set.to(device='cpu')
+
+def show_closest_to(prob_set, class_list, top_k=6):
+    val, idx = torch.topk(prob_set, k=top_k)
+    for i in range(10):
+        to_print = class_list[i]
+        to_print += ": "
+        for j in range(top_k):
+            to_print += f"({class_list[idx[i][j]]}, {val[i][j]:.5f}) "
+        print(to_print)
 
 def get_text_distances(language_model, language_input):
     with torch.no_grad():

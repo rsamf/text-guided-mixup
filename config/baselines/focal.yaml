@@ -1,5 +1,1 @@
 loss: Focal
-dataset: CIFAR100
-epochs: 30
-batch_size: 64
-lr: .0001

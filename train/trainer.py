@@ -1,13 +1,12 @@
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from utils import DEVICE, Evaluator
 from lfm import LocalFeatureMixup
 
-
 def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer):
     optimizer = optim.Adam(model.visual_model.get_parameters(), lr)
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=.8)
     mixer = LocalFeatureMixup(alpha, freq)
     with torch.no_grad():
         language_features = model.language_model(train_set.get_lang_inputs())
@@ -37,11 +36,30 @@ def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lf
         optimizer.step()
         evaluator.update(pred, y)
 
+    def train_step_lfm_features(batch):
+        x, y, _ = batch
+        x_i, x_j = x
+        y_i, y_j = y
+        x_i = x_i.to(DEVICE)
+        x_j = x_j.to(DEVICE)
+        optimizer.zero_grad()
+        f_i = model.visual_model(x_i)
+        f_j = model.visual_model(x_j)
+        f_mixed, y = mixer.mix_features(f_i, y_i, f_j, y_j)
+        pred = model.get_similarity(f_mixed, language_features)
+        y = y.to(DEVICE)
+        loss = loss_fn(pred, y)
+        loss.backward()
+        optimizer.step()
+        evaluator.update(pred, y)
+
     report_metrics(None, validator, 0, writer)
     step = 0
     train_step = train_step_default if not use_lfm else train_step_lfm
+    # train_step = train_step_lfm_features
     for i in range(epochs):
         print(f"epoch {i}")
+        model.train()
         for batch in train_loader:
             train_step(batch)
             step += 1
@@ -49,6 +67,9 @@ def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lf
             report_metrics(None, validator, step, writer)
         else:
             report_metrics(evaluator, validator, step, writer)
+        last_lr = scheduler.get_last_lr()[0]
+        print(f'lr = {last_lr}')
+        scheduler.step()
 
 def report_metrics(evaluator, validator, step, writer):
     # Log validation accuracy

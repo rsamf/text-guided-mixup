@@ -1,5 +1,5 @@
 import argparse
-from utils import DEVICE, Validator, get_sample_probability_matrix, get_text_distances
+from utils import DEVICE, Validator, get_sample_probability_matrix_softmax, get_sample_probability_matrix_norm, get_text_distances, show_closest_to
 from train import trainer
 from models.simple import SimpleCLIPModel
 from data import dataloader
@@ -29,7 +29,7 @@ def get_freq():
     return freq
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--cfg', default=None, type=str)
+parser.add_argument('--cfg', nargs='+', default=None, type=str, required=True)
 parser.add_argument('--epochs', type=int, default=None)
 parser.add_argument('--batch_size', type=int, default=None)
 parser.add_argument('--loss', type=str, default=None)
@@ -39,7 +39,12 @@ parser.add_argument('--use_lfm', default=False, action='store_true')
 parser.add_argument('--model_dir', type=str, default=None)
 
 args = parser.parse_args()
-yml = yaml.load(Path(args.cfg).read_text(), yaml.Loader) if args.cfg != None else {}
+yml = {}
+for cfg in args.cfg:
+    print(f"using config {cfg}")
+    cfg = yaml.load(Path(cfg).read_text(), yaml.Loader)
+    yml = yml | cfg
+print(yml)
 
 epochs = args.epochs or yml.get("epochs")
 batch_size = args.batch_size or yml.get("batch_size")
@@ -74,7 +79,8 @@ def main():
     p_matrix = None
     if use_lfm:
         language_input = train_set.get_lang_inputs()
-        p_matrix = get_sample_probability_matrix(model.language_model, language_input)
+        p_matrix = get_sample_probability_matrix_softmax(model.language_model, language_input)
+        # p_matrix = get_sample_probability_matrix_norm(model.language_model, language_input)
 
     train_loader = dataloader.get_dataloader(train_set, batch_size, num_workers=4, p_matrix=p_matrix)
     val_loader = dataloader.get_dataloader(val_set, batch_size, num_workers=4)
