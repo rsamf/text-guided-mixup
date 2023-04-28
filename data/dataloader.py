@@ -21,74 +21,77 @@ RGB_statistics = {
     }
 }
 
-# Data transformation with augmentation
-def get_data_transform(split, rgb_mean, rbg_std, key='default'):
-    data_transforms = {
-        'train': transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(rgb_mean, rbg_std)
-        ]) if key == 'iNaturalist18' else transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0),
-            transforms.ToTensor(),
-            transforms.Normalize(rgb_mean, rbg_std)
-        ]),
-        'val': transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(rgb_mean, rbg_std)
-        ]),
-        'test': transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(rgb_mean, rbg_std)
-        ])
-    }
-    return data_transforms[split]
+# # Data transformation with augmentation
+# def get_data_transform(split, rgb_mean, rbg_std, key='default'):
+#     data_transforms = {
+#         'train': transforms.Compose([
+#             transforms.RandomResizedCrop(224),
+#             transforms.RandomHorizontalFlip(),
+#             transforms.ToTensor(),
+#             transforms.Normalize(rgb_mean, rbg_std)
+#         ]) if key == 'iNaturalist18' else transforms.Compose([
+#             transforms.RandomResizedCrop(224),
+#             transforms.RandomHorizontalFlip(),
+#             transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0),
+#             transforms.ToTensor(),
+#             transforms.Normalize(rgb_mean, rbg_std)
+#         ]),
+#         'val': transforms.Compose([
+#             transforms.Resize(256),
+#             transforms.CenterCrop(224),
+#             transforms.ToTensor(),
+#             transforms.Normalize(rgb_mean, rbg_std)
+#         ]),
+#         'test': transforms.Compose([
+#             transforms.Resize(256),
+#             transforms.CenterCrop(224),
+#             transforms.ToTensor(),
+#             transforms.Normalize(rgb_mean, rbg_std)
+#         ])
+#     }
+#     return data_transforms[split]
 
+TRAIN_TRANSFORMS = transforms.Compose([
+    transforms.RandomHorizontalFlip(),
+    # transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0)
+])
 
-# Dataset
-class LT_Dataset(Dataset):
-    def __init__(self, root, txt, dataset, transform=None):
-        self.img_path = []
-        self.labels = []
-        self.transform = transform
+# # Dataset
+# class LT_Dataset(Dataset):
+#     def __init__(self, root, txt, dataset):
+#         self.img_path = []
+#         self.labels = []
 
-        with open(txt) as f:
-            for line in f:
-                self.img_path.append(os.path.join(root, line.split()[0]))
-                self.labels.append(int(line.split()[1]))
+#         with open(txt) as f:
+#             for line in f:
+#                 self.img_path.append(os.path.join(root, line.split()[0]))
+#                 self.labels.append(int(line.split()[1]))
 
-        # save the class frequency
-        if 'train' in txt:
-            if not os.path.exists('cls_freq'):
-                os.makedirs('cls_freq')
-            freq_path = os.path.join('cls_freq', dataset + '.json')
-            self.img_num_per_cls = [0 for _ in range(max(self.labels)+1)]
-            for cls in self.labels:
-                self.img_num_per_cls[cls] += 1
-            with open(freq_path, 'w') as fd:
-                json.dump(self.img_num_per_cls, fd)
+#         # save the class frequency
+#         if 'train' in txt:
+#             if not os.path.exists('cls_freq'):
+#                 os.makedirs('cls_freq')
+#             freq_path = os.path.join('cls_freq', dataset + '.json')
+#             self.img_num_per_cls = [0 for _ in range(max(self.labels)+1)]
+#             for cls in self.labels:
+#                 self.img_num_per_cls[cls] += 1
+#             with open(freq_path, 'w') as fd:
+#                 json.dump(self.img_num_per_cls, fd)
 
-    def __len__(self):
-        return len(self.labels)
+#     def __len__(self):
+#         return len(self.labels)
 
-    def __getitem__(self, index):
-        path = self.img_path[index]
-        label = self.labels[index]
+#     def __getitem__(self, index):
+#         path = self.img_path[index]
+#         label = self.labels[index]
 
-        with open(path, 'rb') as f:
-            sample = Image.open(f).convert('RGB')
+#         with open(path, 'rb') as f:
+#             sample = Image.open(f).convert('RGB')
 
-        if self.transform is not None:
-            sample = self.transform(sample)
+#         if self.transform is not None:
+#             sample = self.transform(sample)
 
-        return sample, label, index
+#         return sample, label, index
 
 class ResettableSubsetSampler(SubsetRandomSampler):
     def __init__(self, indices):
@@ -167,22 +170,15 @@ def pair_local_samples(batch):
     idx = [idx_i, idx_j]
     return x, y, idx
 
-def get_dataset(data_root, dataset, phase, cifar_imb_ratio=None, transform=None):
-    if phase == 'train_plain':
-        txt_split = 'train'
-    elif phase == 'train_val':
-        txt_split = 'val'
-        phase = 'train'
+def get_dataset(data_root, dataset, phase, model_preprocess, cifar_imb_ratio=None):
+    transform = None
+    if phase == "train":
+        transform = transforms.Compose([
+            TRAIN_TRANSFORMS,
+            model_preprocess
+        ])
     else:
-        txt_split = phase
-    txt = './data/%s/%s_%s.txt'%(dataset, dataset, txt_split)
-    print('Loading data from %s' % (txt))
-
-    if dataset == 'iNaturalist18':
-        print('===> Loading iNaturalist18 statistics')
-        key = 'iNaturalist18'
-    else:
-        key = 'default'
+        transform = model_preprocess
 
     if dataset == 'CIFAR10':
         print('====> CIFAR10 Imbalance Ratio: ', cifar_imb_ratio)
@@ -191,19 +187,10 @@ def get_dataset(data_root, dataset, phase, cifar_imb_ratio=None, transform=None)
         print('====> CIFAR100 Imbalance Ratio: ', cifar_imb_ratio)
         set_ = IMBALANCECIFAR100(phase, imbalance_ratio=cifar_imb_ratio, root=data_root, transform=transform)
     else:
-        rgb_mean, rgb_std = RGB_statistics[key]['mean'], RGB_statistics[key]['std']
-        if phase not in ['train', 'val']:
-            transform = get_data_transform('test', rgb_mean, rgb_std, key)
-        else:
-            transform = get_data_transform(phase, rgb_mean, rgb_std, key)
-
-        print('Use data transformation:', transform)
-        set_ = LT_Dataset(data_root, txt, dataset, transform)
+        set_ = None
     return set_
 
 def get_dataloader(dataset, batch_size, num_workers=4, p_matrix=None):
-    # if p_matrix != None:
-        # return LocalClassLoader(dataset, batch_size=batch_size, num_workers=num_workers, probability_matrix=p_matrix)
     if p_matrix != None:
         sampler = LocalClassSampler(dataset, p_matrix)
         return DataLoader(dataset, 

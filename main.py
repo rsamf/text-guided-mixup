@@ -1,6 +1,6 @@
 import argparse
 from utils import DEVICE, Validator, get_sample_probability_matrix_softmax, get_sample_probability_matrix_norm, get_text_distances, show_closest_to
-from train import trainer
+from train import trainer, decoupled_trainer
 from models.simple import SimpleCLIPModel
 from data import dataloader
 from torch.nn import CrossEntropyLoss
@@ -53,6 +53,7 @@ dataset_str = args.dataset or yml.get("dataset")
 lr = args.lr or yml.get("lr")
 use_lfm = args.use_lfm or yml.get("use_lfm")
 alpha = yml.get("alpha")
+backbone = yml.get("backbone")
 
 freq = get_freq()
 
@@ -68,19 +69,19 @@ def setup_loss_fn(loss_str, model, language_input):
     if loss_str == 'LDAM':
         return losses.LDAMLoss(freq, reduction='mean')
     if loss_str == 'MMS':
-        return losses.MarginMetricSoftmax(get_text_distances(model.language_model, language_input), reduction='mean')
+        return losses.MarginMetricSoftmax(get_text_distances(model.get_text_features, language_input), reduction='mean')
 
 def main():
     dr = data_root[dataset_str]
-    model = SimpleCLIPModel().to(DEVICE)
-    train_set = dataloader.get_dataset(dr, dataset_str, 'train', cifar_imb_ratio=100, transform=model.preprocess)
-    val_set = dataloader.get_dataset(dr, dataset_str, 'val', transform=model.preprocess)
+    model = SimpleCLIPModel(backbone).to(DEVICE)
+    train_set = dataloader.get_dataset(dr, dataset_str, 'train', model.preprocess, cifar_imb_ratio=100)
+    val_set = dataloader.get_dataset(dr, dataset_str, 'val', model.preprocess)
     # Get Language Input and Sample Probability Matrix
     p_matrix = None
     if use_lfm:
         language_input = train_set.get_lang_inputs()
-        p_matrix = get_sample_probability_matrix_softmax(model.language_model, language_input)
-        # p_matrix = get_sample_probability_matrix_norm(model.language_model, language_input)
+        p_matrix = get_sample_probability_matrix_softmax(model.get_text_features, language_input)
+        # p_matrix = get_sample_probability_matrix_norm(model.get_text_features, language_input)
 
     train_loader = dataloader.get_dataloader(train_set, batch_size, num_workers=4, p_matrix=p_matrix)
     val_loader = dataloader.get_dataloader(val_set, batch_size, num_workers=4)
@@ -88,6 +89,11 @@ def main():
     validator = Validator(model, val_set, val_loader, train_set.get_class_subdivisions(), loss_fn)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     writer = SummaryWriter(f'runs/{loss_str}-{date}')
-    trainer.train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer)
+    trainer_ = None
+    if isinstance(epochs, list):
+        trainer_ = decoupled_trainer
+    else:
+        trainer_ = trainer
+    trainer_.train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer)
 
 main()

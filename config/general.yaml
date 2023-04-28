@@ -1,7 +1,8 @@
 loss: CE
 dataset: CIFAR100
-epochs: 80
-batch_size: 64
+epochs: [60,20]
 lr: .0001
 use_lfm: false
 alpha: 1
+batch_size: 16
+backbone: RN50

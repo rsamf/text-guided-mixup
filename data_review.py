@@ -15,7 +15,7 @@ def get_ang_dist():
     dr = './dataset/CIFAR100'
     set, loader = dataloader.load_data(dr, 'CIFAR100_LT', 'val', 4, num_workers=4, shuffle=True, cifar_imb_ratio=100, transform=model.preprocess)
     language_input = set.get_lang_inputs()
-    language_model = model.language_model
+    language_model = model.get_text_features
     S, T = set.get_super_class_mapping()
     S = S.to(device=DEVICE, dtype=torch.float)
 

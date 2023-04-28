@@ -1,1 +1,2 @@
 use_lfm: true
+loss: CE

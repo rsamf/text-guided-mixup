@@ -22,7 +22,7 @@ class Validator():
         self.evaluator.refresh()
         self.model.eval()
         with torch.no_grad():
-            language_features = self.model.language_model(self.val_set.get_lang_inputs())
+            language_features = self.model.get_text_features(self.val_set.get_lang_inputs())
             for x, tgt, _ in self.val_loader:
                 x = x.to(DEVICE)
                 tgt = tgt.to(DEVICE)
@@ -57,7 +57,7 @@ class Evaluator():
         def acc(logits, tgts):
             if tgts.shape[0] == 0:
                 return torch.zeros(1)
-            return torch.sum(torch.argmax(logits, dim=-1) == tgts) / tgts.shape[0]
+            return torch.sum(torch.argmax(logits.softmax(dim=-1), dim=-1) == tgts) / tgts.shape[0]
         logits, tgts = self.get_tensors()
         all_l, all_t = [], []
         many_l, many_t = [], []
