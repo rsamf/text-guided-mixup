@@ -3,7 +3,8 @@ import torch.optim as optim
 from utils import DEVICE, Evaluator
 from lfm import LocalFeatureMixup
 
-def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer):
+def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer, phase1_model=None):
+    torch.cuda.set_per_process_memory_fraction(.75)
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn)
     mixer = LocalFeatureMixup(alpha, freq)
     with torch.no_grad():
@@ -40,10 +41,13 @@ def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lf
     # train_step = train_step_lfm_features
     for phase in range(2):
         if phase == 0:
-            optimizer = optim.Adam(model.phase0_params, lr)
+            if phase1_model != None:
+                model.load_state_dict(torch.load(phase1_model))
+                continue
+            optimizer = optim.Adam(model.phase0_params, lr[0])
         else:
-            optimizer = optim.Adam(model.phase1_params, lr)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs[phase], eta_min=1e-7)
+            optimizer = optim.Adam(model.phase1_params, lr[1])
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs[phase], eta_min=lr[phase]/1000) #eta_min=1e-7
         for i in range(epochs[phase]):
             writer.add_scalar("Misc/LR", scheduler.get_last_lr()[0], step)
             print(f"Phase {phase}, Epoch {i}")
@@ -51,11 +55,10 @@ def train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lf
             for batch in train_loader:
                 train_step(batch, optimizer, phase)
                 step += 1
-            if use_lfm:
-                report_metrics(None, validator, step, writer)
-            else:
-                report_metrics(evaluator, validator, step, writer)
+            report_metrics(evaluator, validator, step, writer)
             scheduler.step()
+        torch.save(model.state_dict(), f"decoupled_trained_phase_{phase}.pt")
+        torch.cuda.empty_cache()
 
 def report_metrics(evaluator, validator, step, writer):
     # Log validation accuracy
@@ -67,19 +70,23 @@ def report_metrics(evaluator, validator, step, writer):
     writer.add_scalar("Validation/Accuracy/Med", med.item(), step)
     writer.add_scalar("Validation/Accuracy/Few", few.item(), step)
     writer.add_scalar("Validation/AvgLoss", validator_loss.item(), step)
-    if evaluator:
+    if evaluator != None:
         # Log training accuracy
-        all, many, med, few = evaluator.accuracy()
-        training_loss = evaluator.loss()
-        writer.add_scalar("Train/Accuracy/All", all.item(), step)
-        writer.add_scalar("Train/Accuracy/Many", many.item(), step)
-        writer.add_scalar("Train/Accuracy/Med", med.item(), step)
-        writer.add_scalar("Train/Accuracy/Few", few.item(), step)
-        writer.add_scalar("Train/AvgLoss", training_loss.item(), step)
-        evaluator.refresh()
+        # all, many, med, few = evaluator.accuracy()
+        # training_loss = evaluator.loss()
+        # writer.add_scalar("Train/Accuracy/All", all.item(), step)
+        # writer.add_scalar("Train/Accuracy/Many", many.item(), step)
+        # writer.add_scalar("Train/Accuracy/Med", med.item(), step)
+        # writer.add_scalar("Train/Accuracy/Few", few.item(), step)
+        # writer.add_scalar("Train/AvgLoss", training_loss.item(), step)
         # Other metrics
-        writer.add_scalars(f'1/TrainingAndValidationLosses', {
-            'train': training_loss,
-            'validation': validator_loss,
-        }, step)
+        # writer.add_scalars(f'1/TrainingAndValidationLosses', {
+        #     'train': training_loss,
+        #     'validation': validator_loss,
+        # }, step)
+        many, med, few = evaluator.observed_labels()
+        writer.add_scalar("Misc/Labels/Many", many.item(), step)
+        writer.add_scalar("Misc/Labels/Med", med.item(), step)
+        writer.add_scalar("Misc/Labels/Few", few.item(), step)
+        evaluator.refresh()
  

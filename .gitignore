@@ -3,3 +3,4 @@ cls_freq/
 dataset/*
 runs/
 data_review/
+params/

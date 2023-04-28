@@ -54,6 +54,7 @@ lr = args.lr or yml.get("lr")
 use_lfm = args.use_lfm or yml.get("use_lfm")
 alpha = yml.get("alpha")
 backbone = yml.get("backbone")
+phase1_model = yml.get("phase1_model")
 
 freq = get_freq()
 
@@ -80,7 +81,7 @@ def main():
     p_matrix = None
     if use_lfm:
         language_input = train_set.get_lang_inputs()
-        p_matrix = get_sample_probability_matrix_softmax(model.get_text_features, language_input)
+        p_matrix = get_sample_probability_matrix_softmax(model.get_text_features, language_input, train_set.classes)
         # p_matrix = get_sample_probability_matrix_norm(model.get_text_features, language_input)
 
     train_loader = dataloader.get_dataloader(train_set, batch_size, num_workers=4, p_matrix=p_matrix)
@@ -94,6 +95,6 @@ def main():
         trainer_ = decoupled_trainer
     else:
         trainer_ = trainer
-    trainer_.train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer)
+    trainer_.train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer, phase1_model)
 
 main()

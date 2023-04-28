@@ -35,6 +35,9 @@ class Evaluator():
         self.tgts = []
         self.class_subdivisions = class_subdivisions
         self.loss_fn = loss_fn
+        self.many_mask = torch.tensor([1. if c == "many" else 0. for c in self.class_subdivisions]).to(DEVICE)
+        self.med_mask = torch.tensor([1. if c == "med" else 0. for c in self.class_subdivisions]).to(DEVICE)
+        self.few_mask = torch.tensor([1. if c == "few" else 0. for c in self.class_subdivisions]).to(DEVICE)
 
     def update(self, logits, tgts):
         self.logits.append(logits)
@@ -52,6 +55,12 @@ class Evaluator():
         if tgts.shape[0] == 0:
             return torch.zeros(1)
         return self.loss_fn(logits, tgts)
+    
+    def observed_labels(self):
+        _, tgts = self.get_tensors()
+        cls_freq = torch.sum(tgts, dim=0)
+        many, med, few = self.many_mask @ cls_freq, self.med_mask @ cls_freq, self.few_mask @ cls_freq
+        return many, med, few
 
     def accuracy(self):
         def acc(logits, tgts):
@@ -108,15 +117,15 @@ def get_sample_probability_matrix_softmax(language_model, language_input, class_
     cos_sim = f @ f.T
     I_d = torch.eye(cos_sim.shape[0]).to(DEVICE)
     prob_set = ((1 - I_d).T * cos_sim) + (I_d * -1e9)
-    prob_set = F.softmax(prob_set, dim=1)
     prob_set *= 100
+    prob_set = F.softmax(prob_set, dim=1)
     if top_k > 0 and class_list != None:
         num_classes = len(class_list)
         _, idx = torch.topk(prob_set, dim=1, k=num_classes-top_k, largest=False)
         for i in range(prob_set.shape[0]):
             prob_set[i] = torch.index_fill(prob_set[i], dim=0, index=idx[i], value=-1e10)
         prob_set = F.softmax(prob_set, dim=1)
-        show_closest_to(prob_set, class_list, top_k + 2)
+    show_closest_to(prob_set, class_list, 6)
 
     return prob_set.to(device='cpu')
 

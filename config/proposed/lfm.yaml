@@ -1,2 +1,3 @@
 use_lfm: true
-loss: CE
+loss: BalCE
+phase1_model: decoupled_trained_phase_0.pt
