@@ -21,7 +21,9 @@ class LocalFeatureMixup():
         lambda_y = torch.clamp(lambda_x - y_offset, 0, 1)
         lambda_y = lambda_y.unsqueeze(1).expand_as(y_i_onehot)
         y_gen = lambda_y * y_i_onehot + (1 - lambda_y) * y_j_onehot
-        return x_gen, y_gen
+        y_no_offset = lambda_x * y_i_onehot + (1 - lambda_x) * y_j_onehot
+        # print(y_gen)
+        return x_gen, y_gen, y_no_offset
     
     def mix_features(self, f_i, y_i, f_j, y_j):
         y_i_onehot = F.one_hot(y_i, num_classes=self.num_classes)

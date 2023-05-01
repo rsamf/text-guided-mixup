@@ -1,6 +1,6 @@
 import argparse
-from utils import DEVICE, Validator, get_sample_probability_matrix_softmax, get_sample_probability_matrix_norm, get_text_distances, show_closest_to
-from train import trainer, decoupled_trainer
+from utils import DEVICE, Validator, get_sample_probability_matrix_softmax, get_text_distances
+from train import decoupled_trainer
 from models.simple import SimpleCLIPModel
 from data import dataloader
 from torch.nn import CrossEntropyLoss
@@ -82,19 +82,14 @@ def main():
     if use_lfm:
         language_input = train_set.get_lang_inputs()
         p_matrix = get_sample_probability_matrix_softmax(model.get_text_features, language_input, train_set.classes)
-        # p_matrix = get_sample_probability_matrix_norm(model.get_text_features, language_input)
 
-    train_loader = dataloader.get_dataloader(train_set, batch_size, num_workers=4, p_matrix=p_matrix)
+    train_loader_default = dataloader.get_dataloader(train_set, batch_size, num_workers=4)
+    train_loader_lfm = dataloader.get_dataloader(train_set, batch_size, num_workers=4, p_matrix=p_matrix)
+    train_loader = [train_loader_lfm, train_loader_lfm]
     val_loader = dataloader.get_dataloader(val_set, batch_size, num_workers=4)
     loss_fn = setup_loss_fn(loss_str, model, train_set.get_lang_inputs())
-    validator = Validator(model, val_set, val_loader, train_set.get_class_subdivisions(), loss_fn)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     writer = SummaryWriter(f'runs/{loss_str}-{date}')
-    trainer_ = None
-    if isinstance(epochs, list):
-        trainer_ = decoupled_trainer
-    else:
-        trainer_ = trainer
-    trainer_.train(model, train_set, train_loader, validator, loss_fn, epochs, lr, use_lfm, alpha, freq, writer, phase1_model)
+    decoupled_trainer.train(model, train_set, train_loader, val_loader, loss_fn, epochs, lr, alpha, freq, writer, phase1_model)
 
 main()
