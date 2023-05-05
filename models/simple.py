@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import clip
-from utils import DEVICE
 
 FEAT_DIMS = {
     "RN50": 1024,
@@ -12,10 +11,11 @@ FEAT_DIMS = {
     "ViT-B/16": 512
 }
 class SimpleCLIPModel(nn.Module):
-    def __init__(self, backbone="RN50"):
+    def __init__(self, device, backbone="RN50"):
         super(SimpleCLIPModel, self).__init__()
+        self.device = device
         # Setup encoders
-        encoders, self.preprocess = clip.load(backbone, DEVICE)
+        encoders, self.preprocess = clip.load(backbone, device)
         encoders.to(torch.float)
         feat_dim = FEAT_DIMS[backbone]
         self.encode_text = encoders.encode_text
@@ -32,7 +32,7 @@ class SimpleCLIPModel(nn.Module):
 
     def get_text_features(self, text_input):
         with torch.no_grad():
-            text_input = torch.cat([clip.tokenize(text) for text in text_input]).to(DEVICE)
+            text_input = torch.cat([clip.tokenize(text) for text in text_input]).to(self.device)
             clip_features = self.encode_text(text_input).to(dtype=torch.float)
         return clip_features
 
