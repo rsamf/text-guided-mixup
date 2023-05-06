@@ -1,16 +1,17 @@
 import torch
 import torch.linalg as L
 import torch.nn.functional as F
-
-DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+import torch.distributed as dist
 
 class Validator():
-    def __init__(self, model, f_l, val_loader, class_subdivisions, loss_fn):
+    def __init__(self, model, f_l, val_loader, class_subdivisions, loss_fn, mgpu=False, world_size=0):
         self.model = model
         self.val_loader = val_loader
         self.class_subdivisions = class_subdivisions
-        self.evaluator = Evaluator(class_subdivisions, loss_fn)
+        self.evaluator = Evaluator(class_subdivisions, loss_fn, mgpu, world_size)
         self.f_l = f_l
+        self.mgpu = mgpu
+        self.world_size = world_size
 
     def accuracy(self):
         return self.evaluator.accuracy()
@@ -23,23 +24,26 @@ class Validator():
         self.model.eval()
         with torch.no_grad():
             for x, tgt, _ in self.val_loader:
-                x = x.to(DEVICE)
-                y = tgt.to(DEVICE)
+                x = x.to(self.device)
+                y = tgt.to(self.device)
                 tgt = F.one_hot(y, num_classes=self.f_l.shape[0]).to(torch.float)
                 logits, _ = self.model(self.f_l, x, 1)
                 self.evaluator.update(logits, y, tgt)
 
 class Evaluator():
-    def __init__(self, class_subdivisions, loss_fn):
+    def __init__(self, class_subdivisions, loss_fn, device, mpgu=False, world_size=0):
         self.logits = []
         self.tgts = []
         self.tgts_one_hot = []
         self.tgts_no_offset = []
         self.class_subdivisions = class_subdivisions
         self.loss_fn = loss_fn
-        self.many_mask = torch.tensor([1. if c == "many" else 0. for c in self.class_subdivisions]).to(DEVICE)
-        self.med_mask = torch.tensor([1. if c == "med" else 0. for c in self.class_subdivisions]).to(DEVICE)
-        self.few_mask = torch.tensor([1. if c == "few" else 0. for c in self.class_subdivisions]).to(DEVICE)
+        self.device = device
+        self.mpgu = mpgu
+        self.world_size = world_size
+        self.many_mask = torch.tensor([1. if c == "many" else 0. for c in self.class_subdivisions]).to(self.device)
+        self.med_mask = torch.tensor([1. if c == "med" else 0. for c in self.class_subdivisions]).to(self.device)
+        self.few_mask = torch.tensor([1. if c == "few" else 0. for c in self.class_subdivisions]).to(self.device)
 
     def update(self, logits, tgts, tgts_one_hot, tgts_no_offset=None):
         self.logits.append(logits)
@@ -49,14 +53,29 @@ class Evaluator():
             self.tgts_no_offset.append(tgts_no_offset)
 
     def get_tensors(self):
-        return torch.cat(self.logits).to(DEVICE), torch.cat(self.tgts).to(DEVICE)
-    
+        logits, tgts = torch.cat(self.logits).to(self.device), torch.cat(self.tgts).to(self.device)
+        if self.mpgu:
+            logits_out = [torch.zeros_as(logits, device=self.device) for _ in range(self.world_size)]
+            tgts_out = [torch.zeros_as(tgts, device=self.device) for _ in range(self.world_size)]
+            dist.all_gather(logits_out, logits)
+            dist.all_gather(tgts_out, tgts)
+            return logits_out, tgts_out
+        return logits, tgts
+
     def get_tensors_one_hot(self):
-        return torch.cat(self.logits).to(DEVICE), torch.cat(self.tgts_one_hot).to(DEVICE)
-    
+        logits, tgts = torch.cat(self.logits).to(self.device), torch.cat(self.tgts_one_hot).to(self.device)
+        if self.mpgu:
+            logits_out = [torch.zeros_as(logits, device=self.device) for _ in range(self.world_size)]
+            tgts_out = [torch.zeros_as(tgts, device=self.device) for _ in range(self.world_size)]
+            dist.all_gather(logits_out, logits)
+            dist.all_gather(tgts_out, tgts)
+            return logits_out, tgts_out
+        return logits, tgts
+        
+    # Doesn't work on mgpu
     def get_observed_labels(self):
-        input = torch.cat(self.tgts_no_offset).to(DEVICE)
-        adjusted = torch.cat(self.tgts_one_hot).to(DEVICE)
+        input = torch.cat(self.tgts_no_offset).to(self.device)
+        adjusted = torch.cat(self.tgts_one_hot).to(self.device)
         return input, adjusted
 
     def refresh(self):
@@ -68,9 +87,11 @@ class Evaluator():
     def loss(self):
         with torch.no_grad():
             logits, tgts = self.get_tensors_one_hot()
-            if tgts.shape[0] == 0:
-                return torch.zeros(1)
-            return self.loss_fn(logits, tgts)
+            if self.device == 0:
+                if tgts.shape[0] == 0:
+                    return torch.zeros(1)
+                return self.loss_fn(logits, tgts)
+            return None
     
     def observed_labels(self):
         with torch.no_grad():
@@ -88,6 +109,9 @@ class Evaluator():
                     return torch.zeros(1)
                 return torch.sum(torch.argmax(logits.softmax(dim=-1), dim=-1) == tgts) / tgts.shape[0]
             logits, tgts = self.get_tensors()
+            if self.device != 0:
+                return None, None, None, None
+            
             all_l, all_t = [], []
             many_l, many_t = [], []
             med_l, med_t = [], []
@@ -121,7 +145,7 @@ def get_sample_probability_matrix_norm(language_model, language_input):
     f_norm = L.vector_norm(f, dim=1, keepdim=True)
     f = f / f_norm
     cos_sim = f @ f.T
-    I_d = torch.eye(cos_sim.shape[0]).to(DEVICE)
+    I_d = torch.eye(cos_sim.shape[0])
     prob_set = (1 - I_d) * cos_sim
     div = torch.sum(prob_set, dim=1, keepdim=True)
     prob_set = prob_set / div
@@ -135,7 +159,7 @@ def get_sample_probability_matrix_softmax(language_model, language_input, class_
     f_norm = L.vector_norm(f, dim=1, keepdim=True)
     f = f / f_norm
     cos_sim = f @ f.T
-    I_d = torch.eye(cos_sim.shape[0]).to(DEVICE)
+    I_d = torch.eye(cos_sim.shape[0])
     prob_set = ((1 - I_d).T * cos_sim) + (I_d * -1e9)
     prob_set *= 5
     prob_set = F.softmax(prob_set, dim=1)

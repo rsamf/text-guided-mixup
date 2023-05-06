@@ -3,6 +3,7 @@ import json
 import numpy as np
 from random import choices
 from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, Sampler, RandomSampler, BatchSampler
+from torch.utils.data.distributed import DistributedSampler
 from torchvision import transforms
 import torch.nn.functional as F
 import os
@@ -113,9 +114,10 @@ class ResettableSubsetSampler(SubsetRandomSampler):
         self.iterator = super().__iter__()
         self.sample_count = 0
 
-class LocalClassSampler(RandomSampler):
-    def __init__(self, dataset, probability_matrix):
+class LocalClassSampler(Sampler):
+    def __init__(self, dataset, probability_matrix, multi_gpu):
         super(LocalClassSampler, self).__init__(dataset)
+        self.random_sampler = DistributedSampler(dataset) if multi_gpu else RandomSampler(dataset)
         self.dataset = dataset
         self.probability_matrix = probability_matrix
         self.num_classes = self.dataset.get_num_classes()
@@ -130,9 +132,12 @@ class LocalClassSampler(RandomSampler):
         j = choices(range(self.num_classes), prob_dist)[0]
         j_index = self.samplers[j].sample()
         return j_index
+    
+    def set_epoch(self, epoch):
+        self.random_sampler.set_epoch(epoch)
 
     def __iter__(self):
-        random_sampler = super().__iter__()
+        random_sampler = random_sampler.__iter__()
         for i_index in random_sampler:
             i = self.dataset.targets[i_index]
             j_index = self.get_next_j_sample(i)
@@ -190,15 +195,18 @@ def get_dataset(data_root, dataset, phase, model_preprocess, cifar_imb_ratio=Non
         set_ = None
     return set_
 
-def get_dataloader(dataset, batch_size, num_workers=4, p_matrix=None):
+def get_dataloader(dataset, batch_size, p_matrix=None, multi_gpu=False):
     if p_matrix != None:
-        sampler = LocalClassSampler(dataset, p_matrix)
+        sampler = LocalClassSampler(dataset, p_matrix, multi_gpu)
         return DataLoader(dataset, 
-                        num_workers=num_workers,
                         sampler=sampler,
                         batch_size=batch_size*2,
                         collate_fn=pair_local_samples)
     else:
-        return DataLoader(dataset, 
-                batch_size=batch_size,
-                num_workers=num_workers)
+        if multi_gpu:
+            return DataLoader(dataset,
+                    batch_size=batch_size,
+                    sampler=DistributedSampler(dataset))
+        else:
+            return DataLoader(dataset, 
+                    batch_size=batch_size)
