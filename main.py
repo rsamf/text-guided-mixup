@@ -1,6 +1,6 @@
 import argparse
 from utils import DEVICE, Validator, get_sample_probability_matrix_softmax, get_text_distances
-from train import decoupled_trainer
+from train import decoupled_trainer_mgpu
 from models.simple import SimpleCLIPModel
 from data import dataloader
 from torch.nn import CrossEntropyLoss
@@ -43,7 +43,8 @@ yml = {}
 for cfg in args.cfg:
     print(f"using config {cfg}")
     cfg = yaml.load(Path(cfg).read_text(), yaml.Loader)
-    yml = yml | cfg
+    print(cfg)
+    yml.update(cfg)
 print(yml)
 
 epochs = args.epochs or yml.get("epochs")
@@ -56,9 +57,7 @@ alpha = yml.get("alpha")
 backbone = yml.get("backbone")
 phase1_model = yml.get("phase1_model")
 
-freq = get_freq()
-
-def setup_loss_fn(loss_str, model, language_input):
+def setup_loss_fn(loss_str, model, language_input, freq):
     if loss_str == 'CE':
         return CrossEntropyLoss(reduction='mean')
     if loss_str == 'BalCE':
@@ -87,9 +86,10 @@ def main():
     train_loader_lfm = dataloader.get_dataloader(train_set, batch_size, num_workers=4, p_matrix=p_matrix)
     train_loader = [train_loader_lfm, train_loader_lfm]
     val_loader = dataloader.get_dataloader(val_set, batch_size, num_workers=4)
-    loss_fn = setup_loss_fn(loss_str, model, train_set.get_lang_inputs())
+    freq = get_freq()
+    loss_fn = setup_loss_fn(loss_str, model, train_set.get_lang_inputs(), freq)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     writer = SummaryWriter(f'runs/{loss_str}-{date}')
-    decoupled_trainer.train(model, train_set, train_loader, val_loader, loss_fn, epochs, lr, alpha, freq, writer, phase1_model)
+    decoupled_trainer_mpgu.train(model, train_set, train_loader, val_loader, loss_fn, epochs, lr, alpha, freq, writer, phase1_model)
 
 main()

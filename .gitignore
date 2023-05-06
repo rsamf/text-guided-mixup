@@ -4,3 +4,4 @@ dataset/*
 runs/
 data_review/
 params/
+.venv

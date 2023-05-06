@@ -1,4 +1,4 @@
 use_lfm: true
 loss: CE
-alpha: .2 #0 .2 .4 .6 .8 1
-phase1_model: params/sota_ce_lfm_lfm/decoupled_trained_phase_0.pt
+alpha: .4 #0 .2 .4 .6 .8 1
+phase1_model: params/decoupled_trained_phase_0.pt
