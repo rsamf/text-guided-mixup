@@ -152,7 +152,5 @@ class MarginMetricSoftmax(_Loss):
         self.temp = temp
 
     def forward(self, input, labels):
-        num = torch.exp(input[labels] / self.temp)
-        den = torch.sum(torch.exp(input + self.logits_offset))
-        ce = -torch.log(num / den)
+        ce = F.cross_entropy(input + self.logits_offset[labels])
         return ce
