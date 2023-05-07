@@ -13,8 +13,8 @@ FEAT_DIMS = {
 class SimpleCLIPModel(nn.Module):
     def __init__(self, device, backbone="RN50"):
         super(SimpleCLIPModel, self).__init__()
-        self.device = device
         # Setup encoders
+        self.device = device
         encoders, self.preprocess = clip.load(backbone, device)
         encoders.to(torch.float)
         feat_dim = FEAT_DIMS[backbone]

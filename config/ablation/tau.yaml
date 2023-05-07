@@ -1,0 +1,4 @@
+use_lfm: true
+loss: CE
+tau: .05
+phase1_model: params/vitb16_phase0.pt

@@ -4,12 +4,13 @@ import torch.nn.functional as F
 import torch.distributed as dist
 
 class Validator():
-    def __init__(self, model, f_l, val_loader, class_subdivisions, loss_fn, mgpu=False, world_size=0):
+    def __init__(self, model, f_l, val_loader, class_subdivisions, loss_fn, device, mgpu=False, world_size=0):
         self.model = model
         self.val_loader = val_loader
         self.class_subdivisions = class_subdivisions
-        self.evaluator = Evaluator(class_subdivisions, loss_fn, mgpu, world_size)
+        self.evaluator = Evaluator(class_subdivisions, loss_fn, device, mgpu, world_size)
         self.f_l = f_l
+        self.device = device
         self.mgpu = mgpu
         self.world_size = world_size
 
@@ -87,11 +88,9 @@ class Evaluator():
     def loss(self):
         with torch.no_grad():
             logits, tgts = self.get_tensors_one_hot()
-            if self.device == 0:
-                if tgts.shape[0] == 0:
-                    return torch.zeros(1)
-                return self.loss_fn(logits, tgts)
-            return None
+            if tgts.shape[0] == 0:
+                return torch.zeros(1)
+            return self.loss_fn(logits, tgts)
     
     def observed_labels(self):
         with torch.no_grad():
@@ -108,10 +107,8 @@ class Evaluator():
                 if tgts.shape[0] == 0:
                     return torch.zeros(1)
                 return torch.sum(torch.argmax(logits.softmax(dim=-1), dim=-1) == tgts) / tgts.shape[0]
-            logits, tgts = self.get_tensors()
-            if self.device != 0:
-                return None, None, None, None
             
+            logits, tgts = self.get_tensors()
             all_l, all_t = [], []
             many_l, many_t = [], []
             med_l, med_t = [], []
@@ -152,7 +149,7 @@ def get_sample_probability_matrix_norm(language_model, language_input):
 
     return prob_set.to(device='cpu')
 
-def get_sample_probability_matrix_softmax(language_model, language_input, class_list=None, top_k=0):
+def get_sample_probability_matrix_softmax(language_model, language_input, temp, class_list=None, top_k=0):
     with torch.no_grad():
         f = language_model(language_input)
 
@@ -161,7 +158,7 @@ def get_sample_probability_matrix_softmax(language_model, language_input, class_
     cos_sim = f @ f.T
     I_d = torch.eye(cos_sim.shape[0])
     prob_set = ((1 - I_d).T * cos_sim) + (I_d * -1e9)
-    prob_set *= 5
+    prob_set /= temp
     prob_set = F.softmax(prob_set, dim=1)
     if top_k > 0 and class_list != None:
         num_classes = len(class_list)

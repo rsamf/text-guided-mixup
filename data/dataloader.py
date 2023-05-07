@@ -137,7 +137,7 @@ class LocalClassSampler(Sampler):
         self.random_sampler.set_epoch(epoch)
 
     def __iter__(self):
-        random_sampler = random_sampler.__iter__()
+        random_sampler = self.random_sampler.__iter__()
         for i_index in random_sampler:
             i = self.dataset.targets[i_index]
             j_index = self.get_next_j_sample(i)

@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
-from utils import DEVICE
 import numpy as np
 
 class BalancedCE(_Loss):

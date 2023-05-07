@@ -1,11 +1,6 @@
 import argparse
-<<<<<<< HEAD
-from utils import DEVICE, Validator, get_sample_probability_matrix_softmax, get_text_distances
-from train import decoupled_trainer_mgpu
-=======
 from utils import get_sample_probability_matrix_softmax, get_text_distances
 from train import decoupled_trainer, decoupled_trainer_mgpu
->>>>>>> b0a0a02c5287bcc8cf7cac3f0249b97c4ef449e3
 from models.simple import SimpleCLIPModel
 from data import dataloader
 from torch.nn import CrossEntropyLoss
@@ -14,6 +9,7 @@ import torch
 import losses
 import yaml
 import json
+import numpy as np
 from pathlib import Path
 from datetime import datetime
 from torch.distributed import init_process_group, destroy_process_group
@@ -30,6 +26,28 @@ data_root = {
     'CIFAR100': './dataset/CIFAR100',
 }
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--cfg', nargs='+', default=None, type=str, required=True)
+parser.add_argument('--run_exp', default=None, type=str, required=False)
+
+class ExperimentRunner():
+    def __init__(self, config_file, arg_dict, proc):
+        self.arg_dict = arg_dict
+        self.proc = proc
+        self.cfg = yaml.load(Path(config_file).read_text(), yaml.Loader)
+        self.key = self.cfg["key"]
+        self.start = self.cfg["start"]
+        self.end = self.cfg["end"]
+        self.step = self.cfg["step"]
+
+    def run(self):
+        values = np.arange(self.start, self.end, self.step)
+        print(f"Using experiment runner on {len(values)} experiments")
+        for value in values:
+            self.arg_dict[self.key] = value
+            print(self.arg_dict)
+            self.proc(self.arg_dict)
+
 def get_freq():
     freq_path="cls_freq/CIFAR-100-LT_IMBA100.json" # TODO
     with open(freq_path, 'r') as fd:
@@ -37,35 +55,14 @@ def get_freq():
         freq = torch.tensor(freq)
     return freq
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--cfg', nargs='+', default=None, type=str, required=True)
-parser.add_argument('--epochs', type=int, default=None)
-parser.add_argument('--batch_size', type=int, default=None)
-parser.add_argument('--loss', type=str, default=None)
-parser.add_argument('--dataset', type=str, default=None)
-parser.add_argument('--lr', type=int, default=None)
-parser.add_argument('--use_lfm', default=False, action='store_true')
-parser.add_argument('--model_dir', type=str, default=None)
-parser.add_argument('--multi_gpu', type=bool, default=False, action='store_true')
-
-args = parser.parse_args()
-yml = {}
-for cfg in args.cfg:
-    print(f"using config {cfg}")
-    cfg = yaml.load(Path(cfg).read_text(), yaml.Loader)
-    yml.update(cfg)
-print(yml)
-
-epochs = args.epochs or yml.get("epochs")
-batch_size = args.batch_size or yml.get("batch_size")
-loss_str = args.loss or yml.get("loss")
-dataset_str = args.dataset or yml.get("dataset")
-lr = args.lr or yml.get("lr")
-use_lfm = args.use_lfm or yml.get("use_lfm")
-multi_gpu = args.multi_gpu or yml.get("multi_gpu")
-alpha = yml.get("alpha")
-backbone = yml.get("backbone")
-phase1_model = yml.get("phase1_model")
+# parser.add_argument('--epochs', type=int, default=None)
+# parser.add_argument('--batch_size', type=int, default=None)
+# parser.add_argument('--loss', type=str, default=None)
+# parser.add_argument('--dataset', type=str, default=None)
+# parser.add_argument('--lr', type=int, default=None)
+# parser.add_argument('--use_lfm', default=False, action='store_true')
+# parser.add_argument('--model_dir', type=str, default=None)
+# parser.add_argument('--multi_gpu', default=False, action='store_true')
 
 def setup_loss_fn(loss_str, model, language_input, freq):
     if loss_str == 'CE':
@@ -89,41 +86,84 @@ def ddp_setup(rank: int, world_size: int):
     """
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12355"
+    print(f"Setting up GPU {rank}")
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
-def multi_gpu_train(device, num_gpus, model, train_set, train_loader, val_loader, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model):
+def multi_gpu_train(device, num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model):
+    device += 1
     ddp_setup(device, num_gpus)
     writer = SummaryWriter(logdir)
-    model = model.to(device)
+    model = SimpleCLIPModel(device, backbone).to(device)
     model = DDP(model, device_ids=[device])
-    decoupled_trainer_mgpu.train(model, device, train_set, train_loader, val_loader, loss_fn, epochs, lr, alpha, freq, writer, phase1_model)
+    train_loader_lfm = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix, multi_gpu=True)
+    train_loader = [train_loader_lfm, train_loader_lfm]
+    val_loader = dataloader.get_dataloader(val_set, batch_size, multi_gpu=True)
+    f_l = f_l.to(device)
+    decoupled_trainer_mgpu.train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model, main_device=1)
     destroy_process_group()
 
-def main():
+def single_gpu_train(device, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model):
+    writer = SummaryWriter(logdir)
+    model = SimpleCLIPModel(device, backbone).to(device)
+    train_loader_lfm = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix)
+    train_loader = [train_loader_lfm, train_loader_lfm]
+    val_loader = dataloader.get_dataloader(val_set, batch_size)
+    f_l = f_l.to(device)
+    decoupled_trainer.train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model)
+
+def main(yml):
+    epochs = yml.get("epochs")
+    batch_size = yml.get("batch_size")
+    loss_str = yml.get("loss")
+    dataset_str = yml.get("dataset")
+    lr = yml.get("lr")
+    use_lfm = yml.get("use_lfm")
+    multi_gpu = yml.get("multi_gpu")
+    alpha = yml.get("alpha")
+    tau = yml.get("tau")
+    backbone = yml.get("backbone")
+    phase1_model = yml.get("phase1_model")
+
     dr = data_root[dataset_str]
-    model = SimpleCLIPModel(backbone)
-    train_set = dataloader.get_dataset(dr, dataset_str, 'train', model.preprocess, cifar_imb_ratio=100)
-    val_set = dataloader.get_dataset(dr, dataset_str, 'val', model.preprocess)
+    setup_model = SimpleCLIPModel("cpu", backbone)
+    train_set = dataloader.get_dataset(dr, dataset_str, 'train', setup_model.preprocess, cifar_imb_ratio=100)
+    val_set = dataloader.get_dataset(dr, dataset_str, 'val', setup_model.preprocess)
     # Get Language Input and Sample Probability Matrix
     p_matrix = None
     if use_lfm:
         language_input = train_set.get_lang_inputs()
-        p_matrix = get_sample_probability_matrix_softmax(model.get_text_features, language_input, train_set.classes)
+        p_matrix = get_sample_probability_matrix_softmax(setup_model.get_text_features, language_input, tau, train_set.classes)
+
+    with torch.no_grad():
+        f_l = setup_model.get_text_features(train_set.get_lang_inputs())
+        f_l_norm = f_l.norm(dim=-1, keepdim=True)
+        f_l = f_l / f_l_norm
 
     freq = get_freq()
-    loss_fn = setup_loss_fn(loss_str, model, train_set.get_lang_inputs(), freq)
+    loss_fn = setup_loss_fn(loss_str, setup_model, train_set.get_lang_inputs(), freq)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     logdir = f'runs/{loss_str}-{date}'
-    if multi_gpu:
-        num_gpus = torch.cuda.device_count()
-        train_loader_lfm = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix, multi_gpu=True)
-        train_loader = [train_loader_lfm, train_loader_lfm]
-        val_loader = dataloader.get_dataloader(val_set, batch_size, multi_gpu=True)
-        mp.spawn(multi_gpu_train, args=(num_gpus, model, train_set, train_loader, val_loader, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model), nprocs=num_gpus)
-
+    num_gpus = 1#torch.cuda.device_count()
+    if multi_gpu and num_gpus > 1:
+        print("Multi GPU Training")
+        mp.spawn(multi_gpu_train, args=(num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model), nprocs=num_gpus)
     else:
-        writer = SummaryWriter(logdir)
-        decoupled_trainer.train(model, train_set, train_loader, val_loader, loss_fn, epochs, lr, alpha, freq, writer, phase1_model)
+        print("Single GPU Training")
+        single_gpu_train(1, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model)
 
-main()
+if __name__ == "__main__":
+    args = parser.parse_args()
+    yml = {}
+    for cfg in args.cfg:
+        print(f"Using config {cfg}")
+        cfg = yaml.load(Path(cfg).read_text(), yaml.Loader)
+        yml.update(cfg)
+    print(yml)
+
+    if args.run_exp:
+        runner = ExperimentRunner(args.run_exp, yml, main)
+        runner.run()
+    else:
+        main(yml)
+

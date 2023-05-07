@@ -1,4 +1,4 @@
 use_lfm: true
 loss: CE
-alpha: .4 #0 .2 .4 .6 .8 1
+alpha: 1.2 #0 .2 .4 .6 .8 1 1.2 1.4 1.6 1.8 2
 phase1_model: params/decoupled_trained_phase_0.pt

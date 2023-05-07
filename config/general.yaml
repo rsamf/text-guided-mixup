@@ -5,4 +5,4 @@ lr: [.000001, .01]
 use_lfm: false
 alpha: 1
 batch_size: 32
-backbone: RN50
+backbone: ViT-B/16
