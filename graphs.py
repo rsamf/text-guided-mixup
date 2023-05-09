@@ -9,15 +9,15 @@ alpha_ablation_y = [
     ([33.1, 36.2, 38.4, 43.5, 41.2, 48.4, 45.3, 45.5, 46.7, 49.5, 46.6], "few"),
 ]
 
-tau_ablation_x = [.05, .1, .15, .2, .25, .3, .35, .4, .45 , .5]
+tau_ablation_x = [.002, .01, .05, .25, 1.25, 6.25, 31.25]
 tau_ablation_y = [
-    ([79.6, 80.3, 80.0, 80.1, 79.7, 79.6, 79.4, 79.3, 79.4, 79.7], "all"),
-    ([84.4, 85.1, 84.6, 85.3, 84.5, 85.5, 84.4, 84.5, 84.7, 84.8], "many"),
-    ([82.5, 81.4, 81.4, 80.7, 80.9, 81.0, 80.8, 80.9, 81.0, 80.7], "med"),
-    ([70.9, 73.6, 73.2, 73.5, 72.9, 71.6, 72.1, 71.7, 71.6, 72.8], "few"),
+    ([58.8, 64.8, 80.1, 79.2, 79.6, 79.4, 78.9], "all"),
+    ([45.6, 52.3, 83.4, 84.5, 84.9, 84.1, 84.9], "many"),
+    ([70.0, 73.9, 83.3, 80.5, 80.4, 80.4, 79.9], "med"),
+    ([61.6, 69.0, 72.8, 71.7, 72.6, 73.2, 71.0], "few"),
 ]
 
-def create_graph(title, x_label, y_label, x, y):
+def create_graph(title, x_label, y_label, x, y, other_f=[]):
     plt.clf()
     plt.cla()
     plt.title(title)
@@ -25,8 +25,12 @@ def create_graph(title, x_label, y_label, x, y):
     plt.ylabel(y_label)
     for line in y:
         plt.plot(x, line[0], label=line[1], linestyle="--" if line[1] != "all" else "-")
+    for f in other_f:
+        f(plt)
+    plt.xticks(x, x)
+    plt.grid()
     plt.legend()
     plt.savefig(f"plots/{x_label}.png")
 
 create_graph("Effect on Different Values for Alpha", "Alpha", "Top-1 Accuracy", alpha_ablation_x, alpha_ablation_y)
-create_graph("Effect on Different Values for Tau", "Tau", "Top-1 Accuracy", tau_ablation_x, tau_ablation_y)
+create_graph("Effect on Different Values for Tau", "Tau", "Top-1 Accuracy", tau_ablation_x, tau_ablation_y, [lambda plt: plt.xscale('log', base=5)])

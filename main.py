@@ -36,14 +36,17 @@ class ExperimentRunner():
         self.proc = proc
         self.cfg = yaml.load(Path(config_file).read_text(), yaml.Loader)
         self.key = self.cfg["key"]
-        self.start = self.cfg["start"]
-        self.end = self.cfg["end"]
-        self.step = self.cfg["step"]
+        if self.cfg.get("values") != None:
+            self.values = self.cfg.get("values")
+        else:
+            start = self.cfg["start"]
+            end = self.cfg["end"]
+            step = self.cfg["step"]
+            self.values = np.arange(start, end, step)
 
     def run(self):
-        values = np.arange(self.start, self.end, self.step)
-        print(f"Using experiment runner on {len(values)} experiments")
-        for value in values:
+        print(f"Using experiment runner on {len(self.values)} experiments")
+        for value in self.values:
             self.arg_dict[self.key] = value
             print(self.arg_dict)
             self.proc(self.arg_dict)
@@ -76,7 +79,7 @@ def setup_loss_fn(loss_str, model, language_input, freq):
     if loss_str == 'LDAM':
         return losses.LDAMLoss(freq, reduction='mean')
     if loss_str == 'MMS':
-        return losses.MarginMetricSoftmax(get_text_distances(model.get_text_features, language_input), reduction='mean')
+        return losses.MarginMetricSoftmax(get_text_distances(model.get_text_features, language_input))
 
 def ddp_setup(rank: int, world_size: int):
     """
@@ -96,21 +99,21 @@ def multi_gpu_train(device, num_gpus, backbone, train_set, val_set, batch_size, 
     writer = SummaryWriter(logdir)
     model = SimpleCLIPModel(device, backbone).to(device)
     model = DDP(model, device_ids=[device])
-    train_loader_lfm = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix, multi_gpu=True)
-    train_loader = [train_loader_lfm, train_loader_lfm]
+    train_loader = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix, multi_gpu=True)
+    train_loaders = [train_loader, train_loader]
     val_loader = dataloader.get_dataloader(val_set, batch_size, multi_gpu=True)
     f_l = f_l.to(device)
-    decoupled_trainer_mgpu.train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model, main_device=1)
+    decoupled_trainer_mgpu.train(model, device, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model, main_device=1)
     destroy_process_group()
 
 def single_gpu_train(device, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model):
     writer = SummaryWriter(logdir)
     model = SimpleCLIPModel(device, backbone).to(device)
-    train_loader_lfm = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix)
-    train_loader = [train_loader_lfm, train_loader_lfm]
+    train_loader = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix)
+    train_loaders = [train_loader, train_loader]
     val_loader = dataloader.get_dataloader(val_set, batch_size)
     f_l = f_l.to(device)
-    decoupled_trainer.train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model)
+    decoupled_trainer.train(model, device, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model)
 
 def main(yml):
     epochs = yml.get("epochs")
@@ -122,12 +125,13 @@ def main(yml):
     multi_gpu = yml.get("multi_gpu")
     alpha = yml.get("alpha")
     tau = yml.get("tau")
+    cifar_imb = yml.get("cifar_imb")
     backbone = yml.get("backbone")
     phase1_model = yml.get("phase1_model")
 
     dr = data_root[dataset_str]
     setup_model = SimpleCLIPModel("cpu", backbone)
-    train_set = dataloader.get_dataset(dr, dataset_str, 'train', setup_model.preprocess, cifar_imb_ratio=100)
+    train_set = dataloader.get_dataset(dr, dataset_str, 'train', setup_model.preprocess, cifar_imb_ratio=cifar_imb)
     val_set = dataloader.get_dataset(dr, dataset_str, 'val', setup_model.preprocess)
     # Get Language Input and Sample Probability Matrix
     p_matrix = None
@@ -150,7 +154,7 @@ def main(yml):
         mp.spawn(multi_gpu_train, args=(num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model), nprocs=num_gpus)
     else:
         print("Single GPU Training")
-        single_gpu_train(1, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model)
+        single_gpu_train(2, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model)
 
 if __name__ == "__main__":
     args = parser.parse_args()

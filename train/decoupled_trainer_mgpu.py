@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 from utils import Evaluator, Validator
-from lfm import LocalFeatureMixup
+from mixups import LocalFeatureMixup
 import torch.distributed as dist
 
 def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model=None, main_device=0):

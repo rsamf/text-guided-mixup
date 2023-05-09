@@ -1,8 +1,10 @@
 loss: CE
 dataset: CIFAR100
+cifar_imb: 100
 epochs: [50,10]
 lr: [.000001, .01]
 use_lfm: false
 alpha: 1
+tau: .05
 batch_size: 32
 backbone: ViT-B/16

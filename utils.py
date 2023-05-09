@@ -131,8 +131,12 @@ class Evaluator():
             all_l, all_t = torch.stack(all_l), torch.stack(all_t)
             many_l, many_t = torch.stack(many_l), torch.stack(many_t)
             med_l, med_t = torch.stack(med_l), torch.stack(med_t)
-            few_l, few_t = torch.stack(few_l), torch.stack(few_t)
-            return acc(all_l, all_t), acc(many_l, many_t), acc(med_l, med_t), acc(few_l, few_t)
+            # CIFAR-100 with imba 10 doesn't contain few-shot classes
+            few_acc = None
+            if len(few_l) > 0:
+                few_l, few_t = torch.stack(few_l), torch.stack(few_t)
+                few_acc = acc(few_l, few_t)
+            return acc(all_l, all_t), acc(many_l, many_t), acc(med_l, med_t), few_acc
 
 
 def get_sample_probability_matrix_norm(language_model, language_input):

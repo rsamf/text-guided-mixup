@@ -1,2 +1,2 @@
 use_lfm: true
-loss: CE
+loss: MMS

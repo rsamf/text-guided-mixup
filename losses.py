@@ -145,12 +145,11 @@ class LDAMLoss(nn.Module):
         return F.cross_entropy(self.s*output, target, weight=self.weight, reduction=self.reduction)
 
 class MarginMetricSoftmax(_Loss):
-    def __init__(self, text_distances, l=.3, temp=.01, reduction='mean'):
+    def __init__(self, text_distances, l=.3, temp=.01):
         super(MarginMetricSoftmax, self).__init__()
-        self.reduction = reduction
         self.logits_offset = l*text_distances/temp
         self.temp = temp
-
+    # Todo: with one-hot encoding?
     def forward(self, input, labels):
-        ce = F.cross_entropy(input + self.logits_offset[labels])
+        ce = F.cross_entropy(input + self.logits_offset[labels], labels)
         return ce
