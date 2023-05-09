@@ -125,7 +125,7 @@ class LDAMLoss(nn.Module):
         freq = np.array(freq)
         m_list = 1.0 / np.sqrt(np.sqrt(freq))
         m_list = m_list * (max_m / np.max(m_list))
-        m_list = torch.cuda.FloatTensor(m_list)
+        m_list = torch.from_numpy(m_list).type(torch.float)
         self.m_list = m_list
         assert s > 0
         self.s = s
@@ -137,6 +137,7 @@ class LDAMLoss(nn.Module):
         index.scatter_(1, target.data.view(-1, 1), 1)
         
         index_float = index.type(torch.cuda.FloatTensor)
+        self.m_list = self.m_list.to(device=x.device)
         batch_m = torch.matmul(self.m_list[None, :], index_float.transpose(0,1))
         batch_m = batch_m.view((-1, 1))
         x_m = x - batch_m
@@ -147,9 +148,11 @@ class LDAMLoss(nn.Module):
 class MarginMetricSoftmax(_Loss):
     def __init__(self, text_distances, l=.3, temp=.01):
         super(MarginMetricSoftmax, self).__init__()
-        self.logits_offset = l*text_distances/temp
+        self.logits_offset = l*text_distances
         self.temp = temp
-    # Todo: with one-hot encoding?
-    def forward(self, input, labels):
-        ce = F.cross_entropy(input + self.logits_offset[labels], labels)
+
+    def forward(self, pred, labels):
+        offset = self.logits_offset.type(pred.type())
+        offset = offset.to(device=pred.device)
+        ce = F.cross_entropy((pred + offset[labels]) / self.temp, labels)
         return ce

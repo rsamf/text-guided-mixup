@@ -29,6 +29,8 @@ data_root = {
 parser = argparse.ArgumentParser()
 parser.add_argument('--cfg', nargs='+', default=None, type=str, required=True)
 parser.add_argument('--run_exp', default=None, type=str, required=False)
+parser.add_argument('--gpu', type=int, required=False)
+args = parser.parse_args()
 
 class ExperimentRunner():
     def __init__(self, config_file, arg_dict, proc):
@@ -50,22 +52,6 @@ class ExperimentRunner():
             self.arg_dict[self.key] = value
             print(self.arg_dict)
             self.proc(self.arg_dict)
-
-def get_freq():
-    freq_path="cls_freq/CIFAR-100-LT_IMBA100.json" # TODO
-    with open(freq_path, 'r') as fd:
-        freq = json.load(fd)
-        freq = torch.tensor(freq)
-    return freq
-
-# parser.add_argument('--epochs', type=int, default=None)
-# parser.add_argument('--batch_size', type=int, default=None)
-# parser.add_argument('--loss', type=str, default=None)
-# parser.add_argument('--dataset', type=str, default=None)
-# parser.add_argument('--lr', type=int, default=None)
-# parser.add_argument('--use_lfm', default=False, action='store_true')
-# parser.add_argument('--model_dir', type=str, default=None)
-# parser.add_argument('--multi_gpu', default=False, action='store_true')
 
 def setup_loss_fn(loss_str, model, language_input, freq):
     if loss_str == 'CE':
@@ -94,7 +80,6 @@ def ddp_setup(rank: int, world_size: int):
     torch.cuda.set_device(rank)
 
 def multi_gpu_train(device, num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model):
-    device += 1
     ddp_setup(device, num_gpus)
     writer = SummaryWriter(logdir)
     model = SimpleCLIPModel(device, backbone).to(device)
@@ -138,26 +123,31 @@ def main(yml):
     if use_lfm:
         language_input = train_set.get_lang_inputs()
         p_matrix = get_sample_probability_matrix_softmax(setup_model.get_text_features, language_input, tau, train_set.classes)
+    else:
+        alpha = None
 
     with torch.no_grad():
         f_l = setup_model.get_text_features(train_set.get_lang_inputs())
         f_l_norm = f_l.norm(dim=-1, keepdim=True)
         f_l = f_l / f_l_norm
 
-    freq = get_freq()
+    freq = train_set.get_freq()
     loss_fn = setup_loss_fn(loss_str, setup_model, train_set.get_lang_inputs(), freq)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     logdir = f'runs/{loss_str}-{date}'
-    num_gpus = 1#torch.cuda.device_count()
-    if multi_gpu and num_gpus > 1:
+    num_gpus = torch.cuda.device_count()
+    if num_gpus > 1 and args.gpu == None:
         print("Multi GPU Training")
         mp.spawn(multi_gpu_train, args=(num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model), nprocs=num_gpus)
     else:
         print("Single GPU Training")
-        single_gpu_train(2, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model)
+        if args.gpu != None:
+            gpu = args.gpu
+        else:
+            gpu = 0
+        single_gpu_train(gpu, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model)
 
 if __name__ == "__main__":
-    args = parser.parse_args()
     yml = {}
     for cfg in args.cfg:
         print(f"Using config {cfg}")

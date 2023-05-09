@@ -8,9 +8,7 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
     torch.cuda.set_per_process_memory_fraction(.75)
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn, device)
     validator = Validator(model, f_l, val_loader, train_set.get_class_subdivisions(), loss_fn, device)
-    # mixer = LocalFeatureMixup(alpha, freq)
-    # mixer = Mixup()
-    # mixer = Remix(freq)
+    mixer = LocalFeatureMixup(alpha, freq)
 
     def report_metrics(step, only_validate=False):
         # Log validation accuracy
@@ -82,7 +80,10 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
 
     step = 0
     optimizers = [optim.Adam(model.clip_params(), lr[0]), optim.Adam(model.fc_params(), lr[1])]
-    train_steps = [train_step_default, train_step_default]
+    if alpha == None:
+        train_steps = [train_step_default, train_step_default]
+    else:
+        train_steps = [train_step_lfm, train_step_lfm]
     for phase in range(2):
         if phase == 0 and phase1_model != None:
             map_location = {'cuda:0': 'cuda:%d' % device}

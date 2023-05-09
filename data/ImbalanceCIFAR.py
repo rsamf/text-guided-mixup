@@ -100,8 +100,12 @@ class IMBALANCECIFAR10(torchvision.datasets.CIFAR10):
         freq_path = os.path.join('cls_freq', self.dataset_name + '_IMBA{}.json'.format(imb_factor))
         with open(freq_path, 'w') as fd:
             json.dump(img_num_per_cls, fd)
+        self.img_num_per_cls = img_num_per_cls
 
         return img_num_per_cls
+
+    def get_freq(self):
+        return torch.tensor(self.img_num_per_cls)
 
     def gen_imbalanced_data(self, img_num_per_cls):
         new_data = []
