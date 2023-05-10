@@ -132,6 +132,7 @@ def main(yml):
         f_l = f_l / f_l_norm
 
     freq = train_set.get_freq()
+    print(f"imbalance ratio is set to be:", freq[0]/freq[-1])
     loss_fn = setup_loss_fn(loss_str, setup_model, train_set.get_lang_inputs(), freq)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     logdir = f'runs/{loss_str}-{date}'

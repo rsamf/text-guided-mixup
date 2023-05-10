@@ -5,7 +5,6 @@ from utils import Evaluator, Validator
 from mixups import LocalFeatureMixup, Mixup, Remix
 
 def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model=None):
-    torch.cuda.set_per_process_memory_fraction(.75)
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn, device)
     validator = Validator(model, f_l, val_loader, train_set.get_class_subdivisions(), loss_fn, device)
     mixer = LocalFeatureMixup(alpha, freq)
@@ -17,12 +16,13 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
         validator_loss = validator.loss()
         writer.add_scalar("Validation/Accuracy/All", all.item(), step)
         writer.add_scalar("Validation/Accuracy/Many", many.item(), step)
-        writer.add_scalar("Validation/Accuracy/Med", med.item(), step)
+        if med != None:
+            writer.add_scalar("Validation/Accuracy/Med", med.item(), step)
         if few != None:
             writer.add_scalar("Validation/Accuracy/Few", few.item(), step)
         writer.add_scalar("Validation/AvgLoss", validator_loss.item(), step)
         if not only_validate:
-            training_loss = evaluator.loss()
+            training_loss = evaluator.loss(use_one_hot=alpha!=None)
             writer.add_scalar("Train/AvgLoss", training_loss.item(), step)
             evaluator.refresh()
 
