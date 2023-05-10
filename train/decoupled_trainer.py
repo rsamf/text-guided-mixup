@@ -3,6 +3,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from utils import Evaluator, Validator
 from mixups import LocalFeatureMixup, Mixup, Remix
+from tqdm import tqdm
 
 def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model=None):
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn, device)
@@ -94,7 +95,7 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
         for i in range(epochs[phase]):
             print(f"Phase {phase}, Epoch {i}")
             model.train()
-            for batch in train_loader[phase]:
+            for batch in tqdm(train_loader[phase]):
                 train_steps[phase](batch, optimizers[phase], phase)
                 step += 1
             report_metrics(step, only_validate=False)

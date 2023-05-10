@@ -4,7 +4,6 @@ Adopted from https://github.com/KaihuaTang/Long-Tailed-Recognition.pytorch
 import os
 import torch
 import torchvision
-import torchvision.transforms as transforms
 import torch.nn.functional as F
 import numpy as np
 import json
@@ -49,18 +48,6 @@ class IMBALANCECIFAR10(torchvision.datasets.CIFAR10):
         if self.train:
             self.img_num_per_cls = self.get_img_num_per_cls(self.cls_num, imb_type, imbalance_ratio)
             self.gen_imbalanced_data(self.img_num_per_cls)
-            # self.transform = transforms.Compose([
-            #     transforms.ToTensor(),
-            #     transforms.Normalize(
-            #         (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-            # ])
-        else:
-            pass
-            # self.transform = transforms.Compose([
-            #     transforms.ToTensor(),
-            #     transforms.Normalize(
-            #         (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-            # ])
 
         if transform:
             self.transform = transform

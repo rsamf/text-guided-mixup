@@ -7,4 +7,4 @@ use_lfm: false
 alpha: 1
 tau: .05
 batch_size: 32
-backbone: ViT-B/32
+backbone: ViT-B/16

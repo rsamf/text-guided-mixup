@@ -4,9 +4,9 @@ import torch.nn.functional as F
 from utils import Evaluator, Validator
 from mixups import LocalFeatureMixup
 import torch.distributed as dist
+from tqdm import tqdm
 
 def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model=None, main_device=0):
-    torch.cuda.set_per_process_memory_fraction(.75)
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn, device, True)
     validator = Validator(model, f_l, val_loader, train_set.get_class_subdivisions(), loss_fn, device, True)
     mixer = LocalFeatureMixup(alpha, freq)
@@ -19,26 +19,16 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
         if device == main_device:
             writer.add_scalar("Validation/Accuracy/All", all.item(), step)
             writer.add_scalar("Validation/Accuracy/Many", many.item(), step)
-            writer.add_scalar("Validation/Accuracy/Med", med.item(), step)
-            writer.add_scalar("Validation/Accuracy/Few", few.item(), step)
+            if med != None:
+                writer.add_scalar("Validation/Accuracy/Med", med.item(), step)
+            if few != None:
+                writer.add_scalar("Validation/Accuracy/Few", few.item(), step)
             writer.add_scalar("Validation/AvgLoss", validator_loss.item(), step)
         if not only_validate:
-            training_loss = evaluator.loss()
+            training_loss = evaluator.loss(use_one_hot=alpha!=None)
             if device == main_device:
                 writer.add_scalar("Train/AvgLoss", training_loss.item(), step)
-                evaluator.refresh()
-
-    def train_step_default(batch, optimizer, phase):
-        x, y, _ = batch
-        x = x.to(device)
-        y = y.to(device)
-        y_hot = F.one_hot(y, freq.shape[0]).to(torch.float)
-        optimizer.zero_grad()
-        pred, _ = model(f_l, x, phase)
-        loss = loss_fn(pred, y)
-        loss.backward()
-        optimizer.step()
-        evaluator.update(pred, y, y_hot)
+            evaluator.refresh()
 
     def train_step_lfm(batch, optimizer, phase):
         x, y, _ = batch
@@ -70,7 +60,7 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
             train_loader[phase].sampler.set_epoch(i)
             print(f"Phase {phase}, Epoch {i}")
             model.train()
-            for batch in train_loader[phase]:
+            for batch in tqdm(train_loader[phase]):
                 train_steps[phase](batch, optimizers[phase], phase)
                 step += 1
             report_metrics(step, only_validate=False)

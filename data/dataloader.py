@@ -1,14 +1,14 @@
 import torch
 import json
-import numpy as np
 from random import choices
-from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, Sampler, RandomSampler, BatchSampler
+from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, Sampler, RandomSampler, ConcatDataset
 from torch.utils.data.distributed import DistributedSampler
 from torchvision import transforms
 import torch.nn.functional as F
 import os
 from PIL import Image
 from data.ImbalanceCIFAR import IMBALANCECIFAR10, IMBALANCECIFAR100
+from data.ImageNetClasses import IMAGENET_CLASSES
 
 # Image statistics
 RGB_statistics = {
@@ -22,77 +22,65 @@ RGB_statistics = {
     }
 }
 
-# # Data transformation with augmentation
-# def get_data_transform(split, rgb_mean, rbg_std, key='default'):
-#     data_transforms = {
-#         'train': transforms.Compose([
-#             transforms.RandomResizedCrop(224),
-#             transforms.RandomHorizontalFlip(),
-#             transforms.ToTensor(),
-#             transforms.Normalize(rgb_mean, rbg_std)
-#         ]) if key == 'iNaturalist18' else transforms.Compose([
-#             transforms.RandomResizedCrop(224),
-#             transforms.RandomHorizontalFlip(),
-#             transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0),
-#             transforms.ToTensor(),
-#             transforms.Normalize(rgb_mean, rbg_std)
-#         ]),
-#         'val': transforms.Compose([
-#             transforms.Resize(256),
-#             transforms.CenterCrop(224),
-#             transforms.ToTensor(),
-#             transforms.Normalize(rgb_mean, rbg_std)
-#         ]),
-#         'test': transforms.Compose([
-#             transforms.Resize(256),
-#             transforms.CenterCrop(224),
-#             transforms.ToTensor(),
-#             transforms.Normalize(rgb_mean, rbg_std)
-#         ])
-#     }
-#     return data_transforms[split]
-
 TRAIN_TRANSFORMS = transforms.Compose([
-    transforms.RandomHorizontalFlip(),
-    # transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0)
+    transforms.RandomHorizontalFlip()
 ])
 
-# # Dataset
-# class LT_Dataset(Dataset):
-#     def __init__(self, root, txt, dataset):
-#         self.img_path = []
-#         self.labels = []
+# ImageNet/Places Dataset Class
+class LT_Dataset(Dataset):
+    def __init__(self, root, txt, dataset, transform=None):
+        self.img_path = []
+        self.labels = []
+        self.transform = transform
 
-#         with open(txt) as f:
-#             for line in f:
-#                 self.img_path.append(os.path.join(root, line.split()[0]))
-#                 self.labels.append(int(line.split()[1]))
+        with open(txt) as f:
+            for line in f:
+                self.img_path.append(os.path.join(root, line.split()[0]))
+                self.labels.append(int(line.split()[1]))
 
-#         # save the class frequency
-#         if 'train' in txt:
-#             if not os.path.exists('cls_freq'):
-#                 os.makedirs('cls_freq')
-#             freq_path = os.path.join('cls_freq', dataset + '.json')
-#             self.img_num_per_cls = [0 for _ in range(max(self.labels)+1)]
-#             for cls in self.labels:
-#                 self.img_num_per_cls[cls] += 1
-#             with open(freq_path, 'w') as fd:
-#                 json.dump(self.img_num_per_cls, fd)
+        # save the class frequency
+        if 'train' in txt:
+            if not os.path.exists('cls_freq'):
+                os.makedirs('cls_freq')
+            freq_path = os.path.join('cls_freq', dataset + '.json')
+            self.img_num_per_cls = [0 for _ in range(max(self.labels)+1)]
+            for cls in self.labels:
+                self.img_num_per_cls[cls] += 1
+            with open(freq_path, 'w') as fd:
+                json.dump(self.img_num_per_cls, fd)
+    
+    def get_freq(self):
+        return torch.tensor(self.img_num_per_cls)
 
-#     def __len__(self):
-#         return len(self.labels)
+    def __len__(self):
+        return len(self.labels)
 
-#     def __getitem__(self, index):
-#         path = self.img_path[index]
-#         label = self.labels[index]
+    def __getitem__(self, index):
+        path = self.img_path[index]
+        label = self.labels[index]
 
-#         with open(path, 'rb') as f:
-#             sample = Image.open(f).convert('RGB')
+        with open(path, 'rb') as f:
+            sample = Image.open(f).convert('RGB')
 
-#         if self.transform is not None:
-#             sample = self.transform(sample)
+        if self.transform is not None:
+            sample = self.transform(sample)
 
-#         return sample, label, index
+        return sample, label, index
+    
+    def get_lang_inputs(self):
+        text_inputs = [(f"a photo of a {c}") for c in IMAGENET_CLASSES]
+        return text_inputs
+    
+    def get_class_subdivisions(self):
+        def subdivision(num_samples):
+            if num_samples > 100:
+                return "many"
+            elif num_samples > 20:
+                return "med"
+            else:
+                return "few"
+        
+        return [subdivision(num_samples) for num_samples in self.img_num_per_cls]
 
 class ResettableSubsetSampler(SubsetRandomSampler):
     def __init__(self, indices):
@@ -191,6 +179,9 @@ def get_dataset(data_root, dataset, phase, model_preprocess, cifar_imb_ratio=Non
     elif dataset == 'CIFAR100':
         print('====> CIFAR100 Imbalance Ratio: ', cifar_imb_ratio)
         set_ = IMBALANCECIFAR100(phase, imbalance_ratio=cifar_imb_ratio, root=data_root, transform=transform)
+    elif dataset == 'ImageNet':
+        txt = './data/%s/%s_%s.txt'%(dataset, dataset, phase)
+        set_ = LT_Dataset(data_root, txt, dataset, transform=transform)
     else:
         set_ = None
     return set_
