@@ -154,5 +154,15 @@ class MarginMetricSoftmax(_Loss):
     def forward(self, pred, labels):
         offset = self.logits_offset.type(pred.type())
         offset = offset.to(device=pred.device)
-        ce = F.cross_entropy((pred + offset[labels]) / self.temp, labels)
+        if labels.dim() == 1:
+            ce = F.cross_entropy((pred + offset[labels]) / self.temp, labels)
+        elif labels.dim() == 2:
+            max_v, max_i = torch.topk(labels, 2, dim=1)
+            scale0, label0 = max_v[:, 0], max_i[:, 0]
+            scale1, label1 = max_v[:, 1], max_i[:, 1]
+            ce0 = F.cross_entropy((pred + offset[label0]) / self.temp, label0, reduction='none')
+            ce1 = F.cross_entropy((pred + offset[label1]) / self.temp, label1, reduction='none')
+            ce = (scale0 * ce0 + scale1 * ce1).mean()
+        else:
+            raise ValueError(f"Label dimensions expected to be <= 2 but received {labels.dim()}")
         return ce
