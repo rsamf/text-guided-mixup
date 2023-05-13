@@ -1,0 +1,3 @@
+dataset: iNaturalist18
+lr: [.00000005, .005]
+epochs: [40, 10]
