@@ -48,7 +48,7 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
     step = 0
     optimizers = [optim.Adam(model.module.clip_params(), lr[0]), optim.Adam(model.module.fc_params(), lr[1])]
     train_steps = [train_step_lfm, train_step_lfm]
-    phase_state = 0
+    phase_start = 0
     epoch_start = 0
     optimizer_state = None
     scheduler_state = None
@@ -63,7 +63,8 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
         model_state = checkpoint_cfg['model']
         scheduler = checkpoint_cfg['lr_scheduler']
         model.module.load_state_dict(model_state)
-    for phase in range(phase_state, 2):
+    for phase in range(phase_start, 2):
+        mixer.set_alpha(phase)
         optimizer = optimizers[phase]
         if optimizer_state != None:
             optimizer.load_state_dict(optimizer_state)

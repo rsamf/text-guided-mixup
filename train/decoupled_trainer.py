@@ -5,7 +5,7 @@ from utils import Evaluator, Validator
 from mixups import LocalFeatureMixup, Mixup, Remix
 from tqdm import tqdm
 
-def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model=None):
+def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, checkpoint=None):
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn, device)
     validator = Validator(model, f_l, val_loader, train_set.get_class_subdivisions(), loss_fn, device)
     mixer = LocalFeatureMixup(alpha, freq)
@@ -85,14 +85,18 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
         train_steps = [train_step_default, train_step_default]
     else:
         train_steps = [train_step_lfm, train_step_lfm]
-    for phase in range(2):
-        if phase == 0 and phase1_model != None:
-            map_location = {'cuda:0': 'cuda:%d' % device}
-            model.load_state_dict(torch.load(phase1_model, map_location=map_location))
-            continue
+    phase_start = 0
+    epoch_start = 0
+    if checkpoint != None:
+        print("Loading checkpoint")
+        model_state = torch.load(checkpoint)
+        phase_start = 1
+        epoch_start = 0
+        model.load_state_dict(model_state)
+    for phase in range(phase_start, 2):
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizers[phase], epochs[phase], eta_min=lr[phase]/1000)
         report_metrics(step, only_validate=True)
-        for i in range(epochs[phase]):
+        for i in range(epoch_start, epochs[phase]):
             print(f"Phase {phase}, Epoch {i}")
             model.train()
             for batch in tqdm(train_loader[phase]):

@@ -50,10 +50,17 @@ class Remix():
 
 class LocalFeatureMixup():
     def __init__(self, alpha, freq):
-        self.alpha = alpha
+        self.alphas = alpha
         self.beta_dist = Beta(torch.tensor([.5]), torch.tensor([.5]))
         self.freq = freq
         self.num_classes = self.freq.shape[0]
+        self.set_alpha(0)
+
+    def set_alpha(self, phase):
+        if isinstance(self.alphas, list):
+            self.alpha = self.alphas[phase]
+        else:
+            self.alpha = self.alphas
 
     def mix(self, x_i, y_i, x_j, y_j):
         y_i_onehot = F.one_hot(y_i, num_classes=self.num_classes)

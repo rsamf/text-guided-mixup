@@ -1,4 +1,6 @@
 dataset: ImageNet
-lr: [.000005, .001]
-epochs: [50, 20]
+lr: [.000005, .00005]
+epochs: [30, 20]
 batch_size: 32
+alpha: [1, 1.5]
+tau: .5

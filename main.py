@@ -138,7 +138,7 @@ def main(yml):
     loss_fn = setup_loss_fn(loss_str, setup_model, train_set.get_lang_inputs(), freq)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     logdir = f'runs/{loss_str}-{date}'
-    num_gpus = 3#torch.cuda.device_count()
+    num_gpus = torch.cuda.device_count() - 1 # Dont use last one
     if num_gpus > 1 and args.gpu == None:
         print("Multi GPU Training")
         mp.spawn(multi_gpu_train, args=(num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir), nprocs=num_gpus)
