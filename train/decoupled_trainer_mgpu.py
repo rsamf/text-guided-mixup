@@ -6,9 +6,9 @@ from mixups import LocalFeatureMixup
 import torch.distributed as dist
 from tqdm import tqdm
 
-def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model=None, main_device=0):
-    evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn, device, True)
-    validator = Validator(model, f_l, val_loader, train_set.get_class_subdivisions(), loss_fn, device, True)
+def train(model, device, world_size, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, checkpoint=None, main_device=0):
+    evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn, device, True, world_size)
+    validator = Validator(model, f_l, val_loader, train_set.get_class_subdivisions(), loss_fn, device, True, world_size)
     mixer = LocalFeatureMixup(alpha, freq)
 
     def report_metrics(step, only_validate=False):
@@ -48,24 +48,47 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
     step = 0
     optimizers = [optim.Adam(model.module.clip_params(), lr[0]), optim.Adam(model.module.fc_params(), lr[1])]
     train_steps = [train_step_lfm, train_step_lfm]
-    for phase in range(2):
-        if phase == 0 and phase1_model != None:
-            dist.barrier()
-            map_location = {'cuda:0': 'cuda:%d' % device}
-            model.module.load_state_dict(torch.load(phase1_model, map_location=map_location))
-            continue
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizers[phase], epochs[phase], eta_min=lr[phase]/1000)
+    phase_state = 0
+    epoch_start = 0
+    optimizer_state = None
+    scheduler_state = None
+    if checkpoint != None:
+        dist.barrier()
+        print("Loading checkpoint")
+        map_location = {'cuda:0': 'cuda:%d' % device}
+        checkpoint_cfg = torch.load(checkpoint, map_location=map_location)
+        phase_start = checkpoint_cfg['phase']
+        epoch_start = checkpoint_cfg['epoch'] + 1
+        optimizer_state = checkpoint_cfg['optimizer']
+        model_state = checkpoint_cfg['model']
+        scheduler = checkpoint_cfg['lr_scheduler']
+        model.module.load_state_dict(model_state)
+    for phase in range(phase_state, 2):
+        optimizer = optimizers[phase]
+        if optimizer_state != None:
+            optimizer.load_state_dict(optimizer_state)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs[phase], eta_min=lr[phase]/1000)
+        if scheduler_state != None:
+            scheduler.load_state_dict(scheduler_state)
         report_metrics(step, only_validate=True)
-        for i in range(epochs[phase]):
+        for i in range(epoch_start, epochs[phase]):
             train_loader[phase].sampler.set_epoch(i)
             print(f"Phase {phase}, Epoch {i}")
             model.train()
             for batch in tqdm(train_loader[phase]):
-                train_steps[phase](batch, optimizers[phase], phase)
+                train_steps[phase](batch, optimizer, phase)
                 step += 1
             report_metrics(step, only_validate=False)
             scheduler.step()
-        if device == main_device:
-          torch.save(model.module.state_dict(), f"decoupled_mpgpu_{phase}.pt")
+            # Saving every epoch
+            if device == main_device:
+                checkpoint = {
+                    'phase': phase,
+                    'epoch': i,
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict(),
+                    'model': model.module.state_dict()
+                }
+                torch.save(checkpoint, f"mpgpu_{phase}_a.pt")
 
  

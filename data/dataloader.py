@@ -28,15 +28,18 @@ TRAIN_TRANSFORMS = transforms.Compose([
 
 # ImageNet/Places Dataset Class
 class LT_Dataset(Dataset):
-    def __init__(self, root, txt, dataset, transform=None):
+    def __init__(self, root, txt, dataset, class_names, transform=None):
         self.img_path = []
         self.labels = []
         self.transform = transform
+        self.classes = class_names
 
         with open(txt) as f:
             for line in f:
                 self.img_path.append(os.path.join(root, line.split()[0]))
                 self.labels.append(int(line.split()[1]))
+
+        self.targets = self.labels
 
         # save the class frequency
         if 'train' in txt:
@@ -66,9 +69,12 @@ class LT_Dataset(Dataset):
             sample = self.transform(sample)
 
         return sample, label, index
+
+    def get_num_classes(self):
+        return len(self.classes)
     
     def get_lang_inputs(self):
-        text_inputs = [(f"a photo of a {c}") for c in IMAGENET_CLASSES]
+        text_inputs = [(f"a photo of a {c}") for c in self.classes]
         return text_inputs
     
     def get_class_subdivisions(self):
@@ -181,7 +187,7 @@ def get_dataset(data_root, dataset, phase, model_preprocess, cifar_imb_ratio=Non
         set_ = IMBALANCECIFAR100(phase, imbalance_ratio=cifar_imb_ratio, root=data_root, transform=transform)
     elif dataset == 'ImageNet':
         txt = './data/%s/%s_%s.txt'%(dataset, dataset, phase)
-        set_ = LT_Dataset(data_root, txt, dataset, transform=transform)
+        set_ = LT_Dataset(data_root, txt, dataset, IMAGENET_CLASSES, transform=transform)
     else:
         set_ = None
     return set_
@@ -192,12 +198,15 @@ def get_dataloader(dataset, batch_size, p_matrix=None, multi_gpu=False):
         return DataLoader(dataset, 
                         sampler=sampler,
                         batch_size=batch_size*2,
+                        num_workers=8,
                         collate_fn=pair_local_samples)
     else:
         if multi_gpu:
             return DataLoader(dataset,
                     batch_size=batch_size,
+                    num_workers=8,
                     sampler=DistributedSampler(dataset))
         else:
-            return DataLoader(dataset, 
+            return DataLoader(dataset,
+                    num_workers=8,
                     batch_size=batch_size)

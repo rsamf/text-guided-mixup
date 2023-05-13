@@ -2,6 +2,7 @@ import torch
 import torch.linalg as L
 import torch.nn.functional as F
 import torch.distributed as dist
+from tqdm import tqdm
 
 class Validator():
     def __init__(self, model, f_l, val_loader, class_subdivisions, loss_fn, device, mgpu=False, world_size=0):
@@ -24,11 +25,13 @@ class Validator():
         self.evaluator.refresh()
         self.model.eval()
         with torch.no_grad():
-            for x, tgt, _ in self.val_loader:
+            print("Validating...")
+            for x, tgt, _ in tqdm(self.val_loader):
                 x = x.to(self.device)
                 y = tgt.to(self.device)
                 tgt = F.one_hot(y, num_classes=self.f_l.shape[0]).to(torch.float)
                 logits, _ = self.model(self.f_l, x, 1)
+                # print(f"{self.device}: {x.shape} {y.shape} {logits.shape}")
                 self.evaluator.update(logits, y, tgt)
 
 class Evaluator():
@@ -56,21 +59,21 @@ class Evaluator():
     def get_tensors(self):
         logits, tgts = torch.cat(self.logits).to(self.device), torch.cat(self.tgts).to(self.device)
         if self.mpgu:
-            logits_out = [torch.zeros_as(logits, device=self.device) for _ in range(self.world_size)]
-            tgts_out = [torch.zeros_as(tgts, device=self.device) for _ in range(self.world_size)]
+            logits_out = [torch.zeros_like(logits, device=self.device) for _ in range(self.world_size)]
+            tgts_out = [torch.zeros_like(tgts, device=self.device) for _ in range(self.world_size)]
             dist.all_gather(logits_out, logits)
             dist.all_gather(tgts_out, tgts)
-            return logits_out, tgts_out
+            logits, tgts = torch.cat(logits_out), torch.cat(tgts_out)
         return logits, tgts
 
     def get_tensors_one_hot(self):
         logits, tgts = torch.cat(self.logits).to(self.device), torch.cat(self.tgts_one_hot).to(self.device)
         if self.mpgu:
-            logits_out = [torch.zeros_as(logits, device=self.device) for _ in range(self.world_size)]
-            tgts_out = [torch.zeros_as(tgts, device=self.device) for _ in range(self.world_size)]
+            logits_out = [torch.zeros_like(logits, device=self.device) for _ in range(self.world_size)]
+            tgts_out = [torch.zeros_like(tgts, device=self.device) for _ in range(self.world_size)]
             dist.all_gather(logits_out, logits)
             dist.all_gather(tgts_out, tgts)
-            return logits_out, tgts_out
+            logits, tgts = torch.cat(logits_out), torch.cat(tgts_out)
         return logits, tgts
         
     # Doesn't work on mgpu

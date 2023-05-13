@@ -9,6 +9,7 @@ import torch
 import losses
 import yaml
 import numpy as np
+import random
 from pathlib import Path
 from datetime import datetime
 from torch.distributed import init_process_group, destroy_process_group
@@ -16,11 +17,13 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 
+torch.manual_seed(10)
+np.random.seed(0)
+random.seed(0)
 
 data_root = {
     'ImageNet': './dataset/ImageNet',
-    'Places': './dataset/Places-LT',
-    'iNaturalist18': '/checkpoint/bykang/iNaturalist18',
+    'iNaturalist18': './dataset/iNaturalist18',
     'CIFAR10': './dataset/CIFAR10',
     'CIFAR100': './dataset/CIFAR100',
 }
@@ -29,6 +32,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--cfg', nargs='+', default=None, type=str, required=True)
 parser.add_argument('--run_exp', default=None, type=str, required=False)
 parser.add_argument('--gpu', type=int, required=False)
+parser.add_argument('--checkpoint', default=None, type=str, required=False)
 args = parser.parse_args()
 
 class ExperimentRunner():
@@ -78,26 +82,26 @@ def ddp_setup(rank: int, world_size: int):
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
-def multi_gpu_train(device, num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model):
+def multi_gpu_train(device, num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir):
     ddp_setup(device, num_gpus)
     writer = SummaryWriter(logdir)
     model = SimpleCLIPModel(device, backbone).to(device)
-    model = DDP(model, device_ids=[device])
+    model = DDP(model, device_ids=[device], find_unused_parameters=True)
     train_loader = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix, multi_gpu=True)
     train_loaders = [train_loader, train_loader]
-    val_loader = dataloader.get_dataloader(val_set, batch_size, multi_gpu=True)
+    val_loader = dataloader.get_dataloader(val_set, batch_size*num_gpus, multi_gpu=True)
     f_l = f_l.to(device)
-    decoupled_trainer_mgpu.train(model, device, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model, main_device=1)
+    decoupled_trainer_mgpu.train(model, device, num_gpus, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, args.checkpoint, main_device=1)
     destroy_process_group()
 
-def single_gpu_train(device, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model):
+def single_gpu_train(device, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir):
     writer = SummaryWriter(logdir)
     model = SimpleCLIPModel(device, backbone).to(device)
     train_loader = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix)
     train_loaders = [train_loader, train_loader]
     val_loader = dataloader.get_dataloader(val_set, batch_size)
     f_l = f_l.to(device)
-    decoupled_trainer.train(model, device, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, phase1_model)
+    decoupled_trainer.train(model, device, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, args.checkpoint)
 
 def main(yml):
     epochs = yml.get("epochs")
@@ -134,17 +138,17 @@ def main(yml):
     loss_fn = setup_loss_fn(loss_str, setup_model, train_set.get_lang_inputs(), freq)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     logdir = f'runs/{loss_str}-{date}'
-    num_gpus = torch.cuda.device_count()
+    num_gpus = 3#torch.cuda.device_count()
     if num_gpus > 1 and args.gpu == None:
         print("Multi GPU Training")
-        mp.spawn(multi_gpu_train, args=(num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model), nprocs=num_gpus)
+        mp.spawn(multi_gpu_train, args=(num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir), nprocs=num_gpus)
     else:
         print("Single GPU Training")
         if args.gpu != None:
             gpu = args.gpu
         else:
             gpu = 0
-        single_gpu_train(gpu, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir, phase1_model)
+        single_gpu_train(gpu, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir)
 
 if __name__ == "__main__":
     yml = {}
