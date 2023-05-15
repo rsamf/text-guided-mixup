@@ -89,7 +89,7 @@ def multi_gpu_train(device, num_gpus, backbone, train_set, val_set, batch_size, 
     model = DDP(model, device_ids=[device], find_unused_parameters=True)
     train_loader = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix, multi_gpu=True)
     train_loaders = [train_loader, train_loader]
-    val_loader = dataloader.get_dataloader(val_set, batch_size*num_gpus, multi_gpu=True)
+    val_loader = dataloader.get_dataloader(val_set, batch_size*num_gpus, multi_gpu=True, drop_last=True)
     f_l = f_l.to(device)
     decoupled_trainer_mgpu.train(model, device, num_gpus, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, args.checkpoint, main_device=1)
     destroy_process_group()

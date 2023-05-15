@@ -9,6 +9,7 @@ import os
 from PIL import Image
 from data.ImbalanceCIFAR import IMBALANCECIFAR10, IMBALANCECIFAR100
 from data.ImageNetClasses import IMAGENET_CLASSES
+from data.iNaturalist18Classes import get_class_names as get_inat_class_names
 
 # Image statistics
 RGB_statistics = {
@@ -188,11 +189,14 @@ def get_dataset(data_root, dataset, phase, model_preprocess, cifar_imb_ratio=Non
     elif dataset == 'ImageNet':
         txt = './data/%s/%s_%s.txt'%(dataset, dataset, phase)
         set_ = LT_Dataset(data_root, txt, dataset, IMAGENET_CLASSES, transform=transform)
+    elif dataset == 'iNaturalist18':
+        txt = './data/%s/%s_%s.txt'%(dataset, dataset, phase)
+        set_ = LT_Dataset(data_root, txt, dataset, get_inat_class_names(), transform=transform)
     else:
         set_ = None
     return set_
 
-def get_dataloader(dataset, batch_size, p_matrix=None, multi_gpu=False):
+def get_dataloader(dataset, batch_size, p_matrix=None, multi_gpu=False, drop_last=False):
     if p_matrix != None:
         sampler = LocalClassSampler(dataset, p_matrix, multi_gpu)
         return DataLoader(dataset, 
@@ -205,7 +209,8 @@ def get_dataloader(dataset, batch_size, p_matrix=None, multi_gpu=False):
             return DataLoader(dataset,
                     batch_size=batch_size,
                     num_workers=8,
-                    sampler=DistributedSampler(dataset))
+                    sampler=DistributedSampler(dataset),
+                    drop_last=drop_last)
         else:
             return DataLoader(dataset,
                     num_workers=8,
