@@ -1,19 +1,21 @@
 import torch
-import torch.nn as nn
 import torch.linalg as L
 import torch.nn.functional as F
 from data import dataloader
 from models.simple import SimpleCLIPModel
-from utils import DEVICE, Evaluator
+from utils import get_sample_probability_matrix_softmax
 import os.path
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 def p(filename):
     return os.path.join('data_review', filename)
 
 def get_ang_dist():
-    model = SimpleCLIPModel().to(DEVICE)
+    model = SimpleCLIPModel(device="cpu")
     dr = './dataset/CIFAR100'
-    set, loader = dataloader.load_data(dr, 'CIFAR100_LT', 'val', 4, num_workers=4, shuffle=True, cifar_imb_ratio=100, transform=model.preprocess)
+    set = dataloader.get_dataset(dr, 'CIFAR100', 'val', model.preprocess)
+    loader = dataloader.get_dataloader(set, 32)
     language_input = set.get_lang_inputs()
     language_model = model.get_text_features
     S, T = set.get_super_class_mapping()
@@ -25,7 +27,7 @@ def get_ang_dist():
     f_norm = L.vector_norm(f, dim=1, keepdim=True)
     f = f / f_norm
     cos_sim = f @ f.T
-    prob_set = (1 - torch.eye(cos_sim.shape[0]).to(DEVICE)) * F.softmax(cos_sim, dim=1)
+    prob_set = get_sample_probability_matrix_softmax(language_model, language_input, .05, set.classes)
     max_val = 0
     min_val = 1
     max_i, max_j = 0, 0
@@ -76,14 +78,18 @@ def get_ang_dist():
     print("Closest pair of classes where the classes are in different superclasses:")
     print(f"{set.classes[__i]} and {set.classes[__j]} have a cosine similarity of {max_sim_disjoint_sc}\n")
 
+    model = SimpleCLIPModel(device=DEVICE).to(DEVICE)
+    language_model = model.get_text_features
     cf_matrix = torch.zeros((100,100)).to(DEVICE)
+
     with torch.no_grad():
         language_features = language_model(language_input)
 
         for x, t, _ in loader:
             x = x.to(DEVICE)
-            sim, _ = model(language_features, x)
-            pred = torch.argmax(sim, dim=1)
+            sim, _ = model(language_features, x, 1)
+            pred = F.softmax(sim, dim=1)
+            pred = torch.argmax(pred, dim=1)
             N = t.shape[0]
             for i in range(N):
                 cf_matrix[t[i]][pred[i]] += 1.0
