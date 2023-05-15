@@ -17,7 +17,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 
-torch.manual_seed(10)
+torch.manual_seed(0)
 np.random.seed(0)
 random.seed(0)
 
