@@ -114,7 +114,6 @@ def main(yml):
     tau = yml.get("tau")
     cifar_imb = yml.get("cifar_imb")
     backbone = yml.get("backbone")
-    phase1_model = yml.get("phase1_model")
 
     dr = data_root[dataset_str]
     setup_model = SimpleCLIPModel("cpu", backbone)
