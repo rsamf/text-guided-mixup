@@ -50,6 +50,8 @@ def get_text_features(text_input):
     with torch.no_grad():
         text_input = torch.cat([clip.tokenize(text) for text in text_input])
         clip_features = encoders.encode_text(text_input).to(dtype=torch.float)
+        norm = clip_features.norm(dim=-1, keepdim=True)
+        clip_features = clip_features / norm
     return clip_features
 
 dataset = torchvision.datasets.CIFAR100(root="./dataset/CIFAR100", train=False)
@@ -75,8 +77,6 @@ for class_samples in examples_images:
     f_v = encoders.encode_image(class_samples)
     all_f_v.append(f_v)
 f_v = torch.stack(all_f_v)
-mean_v, std_v = torch.mean(f_v), torch.std(f_v)
-n_labels = len(examples_labels)
 
 tsne = TSNE(random_state=1, metric="cosine")
 embs = tsne.fit_transform(f_v.view(-1, 512))
@@ -87,3 +87,26 @@ x = x.view(10, -1)
 y = y.view(10, -1)
 
 create_tsne_scatter(x, y, examples_labels, "Image Feature Space")
+
+## After training
+from models.simple import SimpleCLIPModel 
+model = SimpleCLIPModel(device="cpu", backbone="ViT-B/16").to("cpu")
+model.load_state_dict(torch.load("params/decoupled_single_gpu_1.pt", map_location="cpu"))
+model.eval()
+f_l = get_text_features(examples_labels)
+all_f_v = []
+for class_samples in examples_images:
+    _, f_v = model(f_l, class_samples, 1)
+    all_f_v.append(f_v)
+f_v = torch.stack(all_f_v)
+
+tsne = TSNE(random_state=1, metric="cosine")
+embs = tsne.fit_transform(f_v.view(-1, 512))
+# Add to dataframe for convenience
+x = torch.tensor(embs[:, 0])
+y = torch.tensor(embs[:, 1])
+x = x.view(10, -1)
+y = y.view(10, -1)
+
+create_tsne_scatter(x, y, examples_labels, "Image Feature Space After Training")
+

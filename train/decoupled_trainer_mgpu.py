@@ -34,7 +34,7 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
         x, y, _ = batch
         x_i, x_j = x
         y_i, y_j = y
-        x, y, y_no_offset = mixer.mix(x_i, y_i, x_j, y_j)
+        x, y, _ = mixer.mix(x_i, y_i, x_j, y_j)
         x = x.to(device)
         y = y.to(device)
         optimizer.zero_grad()
@@ -42,8 +42,9 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
         loss = loss_fn(pred, y)
         loss.backward()
         optimizer.step()
-        y_no_offset.to(device)
-        evaluator.update(pred, None, y, y_no_offset) 
+        # y_no_offset.to(device)
+        # evaluator.update(pred, None, y, y_no_offset)
+        del loss, pred
 
     step = 0
     optimizers = [optim.Adam(model.module.clip_params(), lr[0]), optim.Adam(model.module.fc_params(), lr[1])]
@@ -71,7 +72,7 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs[phase], eta_min=lr[phase]/1000)
         if scheduler_state != None:
             scheduler.load_state_dict(scheduler_state)
-        report_metrics(step, only_validate=True)
+        # report_metrics(step, only_validate=True)
         for i in range(epoch_start, epochs[phase]):
             train_loader[phase].sampler.set_epoch(i)
             print(f"Phase {phase}, Epoch {i}")
@@ -79,7 +80,7 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
             for batch in tqdm(train_loader[phase]):
                 train_steps[phase](batch, optimizer, phase)
                 step += 1
-            report_metrics(step, only_validate=False)
+            report_metrics(step, only_validate=True)
             scheduler.step()
             # Saving every epoch
             if device == main_device:

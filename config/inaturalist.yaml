@@ -1,3 +1,4 @@
 dataset: iNaturalist18
-lr: [.00000005, .005]
-epochs: [40, 10]
+lr: [.000005, .005]
+epochs: [30, 10]
+batch_size: 24
