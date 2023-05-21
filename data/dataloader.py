@@ -10,6 +10,7 @@ from PIL import Image
 from data.ImbalanceCIFAR import IMBALANCECIFAR10, IMBALANCECIFAR100
 from data.ImageNetClasses import IMAGENET_CLASSES
 from data.iNaturalist18Classes import get_class_names as get_inat_class_names
+from data.PlacesClasses import PLACES_CLASSES
 
 # Image statistics
 RGB_statistics = {
@@ -192,6 +193,9 @@ def get_dataset(data_root, dataset, phase, model_preprocess, cifar_imb_ratio=Non
     elif dataset == 'iNaturalist18':
         txt = './data/%s/%s_%s.txt'%(dataset, dataset, phase)
         set_ = LT_Dataset(data_root, txt, dataset, get_inat_class_names(), transform=transform)
+    elif dataset == 'Places':
+        txt = './data/%s/%s_%s.txt'%(dataset, dataset, phase)
+        set_ = LT_Dataset(data_root, txt, dataset, PLACES_CLASSES, transform=transform)
     else:
         set_ = None
     return set_

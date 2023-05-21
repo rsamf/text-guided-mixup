@@ -24,6 +24,7 @@ random.seed(0)
 data_root = {
     'ImageNet': './dataset/ImageNet',
     'iNaturalist18': './dataset/iNaturalist18',
+    "Places": "./dataset/Places",
     'CIFAR10': './dataset/CIFAR10',
     'CIFAR100': './dataset/CIFAR100',
 }
