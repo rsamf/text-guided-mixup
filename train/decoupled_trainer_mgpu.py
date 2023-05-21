@@ -72,7 +72,7 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs[phase], eta_min=lr[phase]/1000)
         if scheduler_state != None:
             scheduler.load_state_dict(scheduler_state)
-        # report_metrics(step, only_validate=True)
+        report_metrics(step, only_validate=True)
         for i in range(epoch_start, epochs[phase]):
             train_loader[phase].sampler.set_epoch(i)
             print(f"Phase {phase}, Epoch {i}")
