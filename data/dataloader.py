@@ -206,16 +206,16 @@ def get_dataloader(dataset, batch_size, p_matrix=None, multi_gpu=False, drop_las
         return DataLoader(dataset, 
                         sampler=sampler,
                         batch_size=batch_size*2,
-                        num_workers=8,
+                        num_workers=16,
                         collate_fn=pair_local_samples)
     else:
         if multi_gpu:
             return DataLoader(dataset,
                     batch_size=batch_size,
-                    num_workers=8,
+                    num_workers=16,
                     sampler=DistributedSampler(dataset),
                     drop_last=drop_last)
         else:
             return DataLoader(dataset,
-                    num_workers=8,
+                    num_workers=16,
                     batch_size=batch_size)
