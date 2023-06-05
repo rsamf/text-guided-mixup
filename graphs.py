@@ -72,41 +72,95 @@ examples_indices = [dataset.classes.index(ex) for ex in examples_labels]
 examples_image_idx = [find_indices(dataset.targets, tgt)[:10] for tgt in examples_indices]
 examples_images = torch.stack([torch.stack([preprocess(dataset[img_idx][0]) for img_idx in class_indices]) for class_indices in examples_image_idx])
 
-all_f_v = []
-for class_samples in examples_images:
-    f_v = encoders.encode_image(class_samples)
-    all_f_v.append(f_v)
-f_v = torch.stack(all_f_v)
+def get_model_tsne(model, title):
+    all_f_v = []
+    for class_samples in examples_images:
+        f_v = model(class_samples)
+        all_f_v.append(f_v)
+    f_v = torch.stack(all_f_v)
 
-tsne = TSNE(random_state=1, metric="cosine")
-embs = tsne.fit_transform(f_v.view(-1, 512))
-# Add to dataframe for convenience
-x = torch.tensor(embs[:, 0])
-y = torch.tensor(embs[:, 1])
-x = x.view(10, -1)
-y = y.view(10, -1)
+    tsne = TSNE(random_state=1, metric="cosine")
+    embs = tsne.fit_transform(f_v.view(-1, 512))
+    # Add to dataframe for convenience
+    x = torch.tensor(embs[:, 0])
+    y = torch.tensor(embs[:, 1])
+    x = x.view(10, -1)
+    y = y.view(10, -1)
 
-create_tsne_scatter(x, y, examples_labels, "Image Feature Space")
+    create_tsne_scatter(x, y, examples_labels, title)
 
 ## After training
 from models.simple import SimpleCLIPModel 
-model = SimpleCLIPModel(device="cpu", backbone="ViT-B/16").to("cpu")
-model.load_state_dict(torch.load("params/decoupled_single_gpu_1.pt", map_location="cpu"))
+model = SimpleCLIPModel(device="cpu", backbone="ViT-B/32").to("cpu")
 model.eval()
 f_l = get_text_features(examples_labels)
-all_f_v = []
-for class_samples in examples_images:
-    _, f_v = model(f_l, class_samples, 1)
-    all_f_v.append(f_v)
-f_v = torch.stack(all_f_v)
 
-tsne = TSNE(random_state=1, metric="cosine")
-embs = tsne.fit_transform(f_v.view(-1, 512))
-# Add to dataframe for convenience
-x = torch.tensor(embs[:, 0])
-y = torch.tensor(embs[:, 1])
-x = x.view(10, -1)
-y = y.view(10, -1)
+def model_fn(img):
+    _, f_v = model(f_l, img, 1)
+    return f_v
 
-create_tsne_scatter(x, y, examples_labels, "Image Feature Space After Training")
+# get_model_tsne(encoders.encode_image, "Image Feature Space")
+# model.load_state_dict(torch.load("decoupled_single_gpu_0_0.pt", map_location="cpu"))
+# get_model_tsne(model_fn, "Image Feature Space After Training")
+# model.load_state_dict(torch.load("decoupled_single_gpu_1_0.pt", map_location="cpu"))
+# get_model_tsne(model_fn, "Image Feature Space After Training Phase 1")
 
+
+## Sample Probability
+from data import dataloader
+from utils import get_sample_probability_matrix_softmax
+
+data_root = {
+    'ImageNet': './dataset/ImageNet',
+    'iNaturalist18': './dataset/iNaturalist18',
+    "Places": "./dataset/Places",
+    'CIFAR10': './dataset/CIFAR10',
+    'CIFAR100': './dataset/CIFAR100',
+}
+
+tau = {
+    'CIFAR10': .05,
+    'CIFAR100': .05,
+    'ImageNet': .05,
+    "Places": .5,
+}
+
+def create_sample_plot(title, x_label, y_label, x, y, name):
+    plt.clf()
+    plt.cla()
+    # plt.title(title)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    for line in y:
+        plt.plot(x, line[0], label=line[1])
+    plt.grid()
+    plt.legend()
+    plt.savefig(f"plots/{name}.png")
+
+def get_sample_prob(dataset_str, imb):
+    dataset = dataloader.get_dataset(data_root[dataset_str], dataset_str, 'train', None, cifar_imb_ratio=imb)
+
+    language_input = dataset.get_lang_inputs()
+    p_matrix = get_sample_probability_matrix_softmax(model.get_text_features, language_input, tau[dataset_str], dataset.classes)
+    freq = dataset.get_freq()
+    p_i = freq / len(dataset)
+    p_i, idx_p_i = torch.sort(p_i, descending=True)
+    # [100, 100] * [1, 100]
+    p_matrix = p_matrix[:, idx_p_i]
+    mul = p_matrix * p_i
+    p_j = torch.sum( mul, dim=1 )
+    p = (p_i + p_j) / 2
+    y = (p_i, "LT"), (p, "Local Sampling")
+    imb = p_i.max()/p_i.min()
+    new_imb = p.max() / p.min()
+    print(f"New imbalance factor: {new_imb}")
+    create_sample_plot(f"{dataset_str} Sample Probability with imb factor {imb}", "y", "p(y)", range(freq.shape[0]), y, f"{dataset_str}imb={imb}")
+
+get_sample_prob("CIFAR100", 100)
+get_sample_prob("CIFAR100", 50)
+get_sample_prob("CIFAR100", 10)
+get_sample_prob("CIFAR10", 100)
+get_sample_prob("CIFAR10", 50)
+get_sample_prob("CIFAR10", 10)
+get_sample_prob("ImageNet", None)
+get_sample_prob("Places", None)
