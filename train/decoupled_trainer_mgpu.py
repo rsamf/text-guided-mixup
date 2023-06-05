@@ -58,9 +58,6 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
         print("Loading checkpoint")
         map_location = {'cuda:0': 'cuda:%d' % device}
         checkpoint_cfg = torch.load(checkpoint, map_location=map_location)
-        phase_start = checkpoint_cfg['phase']
-        epoch_start = checkpoint_cfg['epoch'] + 1
-        optimizer_state = checkpoint_cfg['optimizer']
         model_state = checkpoint_cfg['model']
         scheduler = checkpoint_cfg['lr_scheduler']
         model.module.load_state_dict(model_state)

@@ -69,24 +69,39 @@ def create_tsne_scatter(x, y, labels, title):
     fig.savefig(f"plots/{title}.png")
 
 examples_indices = [dataset.classes.index(ex) for ex in examples_labels]
-examples_image_idx = [find_indices(dataset.targets, tgt)[:10] for tgt in examples_indices]
-examples_images = torch.stack([torch.stack([preprocess(dataset[img_idx][0]) for img_idx in class_indices]) for class_indices in examples_image_idx])
+img_max = 50
+examples_image_idx = [find_indices(dataset.targets, tgt)[:img_max] for tgt in examples_indices]
+min_num_images = 2
+cls_num = 10
+gamma = 1 / 50
+img_num_per_cls = [ int(img_max * (gamma ** (cls_idx / (cls_num - 1.0)))) for cls_idx in range(cls_num) ]
+examples_image_idx = [examples_image_idx[i][:img_num] for i,img_num in enumerate(img_num_per_cls)]
+examples_images = [torch.stack([preprocess(dataset[img_idx][0]) for img_idx in class_indices]) for class_indices in examples_image_idx]
 
 all_f_v = []
 for class_samples in examples_images:
     f_v = encoders.encode_image(class_samples)
     all_f_v.append(f_v)
-f_v = torch.stack(all_f_v)
+f_v = torch.cat(all_f_v, dim=0)
+print(f_v.shape)
 
 tsne = TSNE(random_state=1, metric="cosine")
 embs = tsne.fit_transform(f_v.view(-1, 512))
 # Add to dataframe for convenience
 x = torch.tensor(embs[:, 0])
 y = torch.tensor(embs[:, 1])
-x = x.view(10, -1)
-y = y.view(10, -1)
+print(x.shape, y.shape)
+x_view = []
+y_view = []
+for i in range(len(img_num_per_cls)):
+    start = 0 if i == 0 else img_num_per_cls[i-1]
+    end = img_num_per_cls[i]
+    x_view.append(x[start:end])
+    y_view.append(y[start:end])
 
-create_tsne_scatter(x, y, examples_labels, "Image Feature Space")
+print(len(x_view), len(y_view), x_view[0].shape)
+
+create_tsne_scatter(x_view, y_view, examples_labels, "Image Feature Space")
 
 ## After training
 from models.simple import SimpleCLIPModel 
@@ -98,15 +113,15 @@ all_f_v = []
 for class_samples in examples_images:
     _, f_v = model(f_l, class_samples, 1)
     all_f_v.append(f_v)
-f_v = torch.stack(all_f_v)
+f_v = torch.cat(all_f_v, dim=0)
 
 tsne = TSNE(random_state=1, metric="cosine")
 embs = tsne.fit_transform(f_v.view(-1, 512))
 # Add to dataframe for convenience
 x = torch.tensor(embs[:, 0])
 y = torch.tensor(embs[:, 1])
-x = x.view(10, -1)
-y = y.view(10, -1)
+# x = x.view(10, -1)
+# y = y.view(10, -1)
 
 create_tsne_scatter(x, y, examples_labels, "Image Feature Space After Training")
 
