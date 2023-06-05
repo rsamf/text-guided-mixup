@@ -1,4 +1,5 @@
 dataset: Places
 alpha: 1.5
-tau: .5
-lr: [.000005, .05]
+tau: 1
+lr: [.0000001, .0005]
+epochs: [30, 10]

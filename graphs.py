@@ -69,8 +69,14 @@ def create_tsne_scatter(x, y, labels, title):
     fig.savefig(f"plots/{title}.png")
 
 examples_indices = [dataset.classes.index(ex) for ex in examples_labels]
-examples_image_idx = [find_indices(dataset.targets, tgt)[:10] for tgt in examples_indices]
-examples_images = torch.stack([torch.stack([preprocess(dataset[img_idx][0]) for img_idx in class_indices]) for class_indices in examples_image_idx])
+img_max = 50
+examples_image_idx = [find_indices(dataset.targets, tgt)[:img_max] for tgt in examples_indices]
+min_num_images = 2
+cls_num = 10
+gamma = 1 / 50
+img_num_per_cls = [ int(img_max * (gamma ** (cls_idx / (cls_num - 1.0)))) for cls_idx in range(cls_num) ]
+examples_image_idx = [examples_image_idx[i][:img_num] for i,img_num in enumerate(img_num_per_cls)]
+examples_images = [torch.stack([preprocess(dataset[img_idx][0]) for img_idx in class_indices]) for class_indices in examples_image_idx]
 
 def get_model_tsne(model, title):
     all_f_v = []
