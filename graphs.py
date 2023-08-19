@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
+import json
 import numpy as np
+from PIL import Image
 
 alpha_ablation_x = [0, .2, .4, .6, .8, 1., 1.2, 1.4, 1.6, 1.8, 2.]
 alpha_ablation_y = [
@@ -37,8 +39,7 @@ create_graph("Effect on Different Values for Tau", "Tau", "Top-1 Accuracy", tau_
 
 ### T-SNE
 import torch
-import random
-import os
+import torch.nn.functional as F
 import clip
 import torchvision
 from sklearn.manifold import TSNE
@@ -54,119 +55,125 @@ def get_text_features(text_input):
         clip_features = clip_features / norm
     return clip_features
 
-dataset = torchvision.datasets.CIFAR100(root="./dataset/CIFAR100", train=False)
+dataset = torchvision.datasets.CIFAR100(root="./dataset/CIFAR100", train=True)
 examples_labels = ['apple', 'pear', 'lobster', 'crab', 'snake', 'worm', 'bed', 'couch', 'bicycle', 'motorcycle']
 
 def find_indices(input, element):
     indices = [i for i,el in enumerate(input) if el == element]
     return indices
 
-def create_tsne_scatter(x, y, labels, title):
-    fig, ax = plt.subplots(figsize=(10, 8))
-    for cls_x, cls_y, cls_label in zip(x, y, labels):
-        ax.scatter(cls_x, cls_y, alpha=.8, label=cls_label, s=90)
-    fig.legend()
-    fig.savefig(f"plots/{title}.png")
+def create_tsne_scatter(x, y, z, labels, title, rotation):
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(7,7))
+    lines = []
+    lens = [len(cls_x) for cls_x in x]
+    for cls_x, cls_y, cls_z, cls_label in zip(x, y, z, labels):
+        print(cls_label, len(cls_x))
+        lines.append( ax.scatter(cls_x, cls_y, cls_z, alpha=.3, depthshade=True) )
+
+    u = np.linspace(0, 2 * np.pi, 130)
+    v = np.linspace(0, np.pi, 70)
+
+    x = np.outer(np.cos(u), np.sin(v))
+    y = np.outer(np.sin(u), np.sin(v))
+    z = np.outer(np.ones(np.size(u)), np.cos(v))
+
+    # Use 3x the stride, no scipy zoom
+    ax.plot_surface(x, y, z, rstride=3, cstride=3, color='white', edgecolor='#cccccc20', shade=False, alpha=0)
+    # rotate
+    ax.view_init(rotation[0], rotation[1], 0)
+
+    # Comment out when generating scatter plots
+    legend_fig = plt.figure("Legend plot")
+    labels = [f"{label} ({len})" for label, len in zip(labels, lens)]
+    leg = legend_fig.legend(lines, labels, loc='center')
+    for lh in leg.legend_handles:
+        lh.set_alpha(1)
+    legend_fig.savefig('plots/scatter_legend.png', bbox_inches='tight')
+
+    fig.tight_layout()
+    ax.set_aspect('equal')
+    ax.axis('off')
+    fig.savefig(f"plots/{title}.png", bbox_inches='tight')
 
 examples_indices = [dataset.classes.index(ex) for ex in examples_labels]
-img_max = 50
-examples_image_idx = [find_indices(dataset.targets, tgt)[:img_max] for tgt in examples_indices]
-min_num_images = 2
-cls_num = 10
-gamma = 1 / 50
-img_num_per_cls = [ int(img_max * (gamma ** (cls_idx / (cls_num - 1.0)))) for cls_idx in range(cls_num) ]
-examples_image_idx = [examples_image_idx[i][:img_num] for i,img_num in enumerate(img_num_per_cls)]
+examples_image_idx = [find_indices(dataset.targets, tgt) for tgt in examples_indices]
+
+with open("cls_freq/CIFAR-100-LT_IMBA100.json", "r") as f:
+    freqs = json.load(f)
+example_freqs = [freqs[idx] for idx in examples_indices]
+img_num_per_cls = example_freqs
+print(img_num_per_cls)
+
+cls_num = len(examples_labels)
+examples_image_idx = [ examples_image_idx[i][:img_num] for i,img_num in enumerate(img_num_per_cls)]
 examples_images = [torch.stack([preprocess(dataset[img_idx][0]) for img_idx in class_indices]) for class_indices in examples_image_idx]
 
-def get_model_tsne(model, title):
+def get_tnse_output(model):
     all_f_v = []
     for class_samples in examples_images:
         f_v = model(class_samples)
         all_f_v.append(f_v)
-    f_v = torch.stack(all_f_v)
+    f_v = torch.cat(all_f_v, dim=0)
 
-    tsne = TSNE(random_state=1, metric="cosine")
+    tsne = TSNE(n_components=3, random_state=1, metric="cosine", n_iter=2000)
     embs = tsne.fit_transform(f_v.view(-1, 512))
-    # Add to dataframe for convenience
-    x = torch.tensor(embs[:, 0])
-    y = torch.tensor(embs[:, 1])
-    x = x.view(10, -1)
-    y = y.view(10, -1)
+    embs = torch.tensor(embs)
+    embs = F.normalize(embs, dim=-1)
+    x = embs[:, 0]
+    y = embs[:, 1]
+    z = embs[:, 2]
+    x_view = []
+    y_view = []
+    z_view = []
+    ptr = 0
+    for i in range(cls_num):
+        img_num = img_num_per_cls[i]
+        x_view.append(x[ptr:ptr+img_num])
+        y_view.append(y[ptr:ptr+img_num])
+        z_view.append(z[ptr:ptr+img_num])
+        ptr += img_num
+    return x_view, y_view, z_view
 
-    create_tsne_scatter(x, y, examples_labels, title)
+x, y, z = get_tnse_output(encoders.encode_image)
+create_tsne_scatter(x, y, z, examples_labels, "top-feat", (90, -100))
+create_tsne_scatter(x, y, z, examples_labels, "front-feat", (18, -100))
+create_tsne_scatter(x, y, z, examples_labels, "left-feat", (18, -155))
 
 ## After training
 from models.simple import SimpleCLIPModel 
-model = SimpleCLIPModel(device="cpu", backbone="ViT-B/32").to("cpu")
+model = SimpleCLIPModel(device="cpu", backbone="ViT-B/16").to("cpu")
 model.eval()
-f_l = get_text_features(examples_labels)
 
-def model_fn(img):
-    _, f_v = model(f_l, img, 1)
-    return f_v
+# After training with CE
+model.load_state_dict(torch.load("<PLACE_CE_MODEL_HERE>", map_location="cpu"))
+x, y, z = get_tnse_output(model.get_visual_features)
+create_tsne_scatter(x, y, z, examples_labels, "top-feat-ce", (90, -100))
+create_tsne_scatter(x, y, z, examples_labels, "front-feat-ce", (18, -100))
+create_tsne_scatter(x, y, z, examples_labels, "left-feat-ce", (18, -155))
 
-# get_model_tsne(encoders.encode_image, "Image Feature Space")
-# model.load_state_dict(torch.load("decoupled_single_gpu_0_0.pt", map_location="cpu"))
-# get_model_tsne(model_fn, "Image Feature Space After Training")
-# model.load_state_dict(torch.load("decoupled_single_gpu_1_0.pt", map_location="cpu"))
-# get_model_tsne(model_fn, "Image Feature Space After Training Phase 1")
+# After training with LFM + CE
+model.load_state_dict(torch.load("<PLACE_CE_LFM_MODEL_HERE>", map_location="cpu"))
+x, y, z = get_tnse_output(model.get_visual_features)
+create_tsne_scatter(x, y, z, examples_labels, "top-feat-lfm-ce", (90, -100))
+create_tsne_scatter(x, y, z, examples_labels, "front-feat-lfm-ce", (18, -100))
+create_tsne_scatter(x, y, z, examples_labels, "left-feat-lfm-ce", (18, -155))
 
+def crop_ims(ims):
+    ims_to_crop = [ (f"plots/{name}.png", f"plots/{name}.png") for name in ims]
+    new_width, new_height = 400, 400
+    left_padding = 20
+    bottom_padding = -20
+    for og_name, new_name in ims_to_crop:
+        im = Image.open(og_name)
+        width, height = im.size
+        left = (width - new_width) / 2 + left_padding
+        top = (height - new_height) / 2
+        right = (width + new_width) / 2
+        bottom = (height + new_height) / 2 + bottom_padding
+        im = im.crop((left, top, right, bottom))
+        im.save(new_name)
 
-## Sample Probability
-from data import dataloader
-from utils import get_sample_probability_matrix_softmax
-
-data_root = {
-    'ImageNet': './dataset/ImageNet',
-    'iNaturalist18': './dataset/iNaturalist18',
-    "Places": "./dataset/Places",
-    'CIFAR10': './dataset/CIFAR10',
-    'CIFAR100': './dataset/CIFAR100',
-}
-
-tau = {
-    'CIFAR10': .05,
-    'CIFAR100': .05,
-    'ImageNet': .05,
-    "Places": .5,
-}
-
-def create_sample_plot(title, x_label, y_label, x, y, name):
-    plt.clf()
-    plt.cla()
-    # plt.title(title)
-    plt.xlabel(x_label)
-    plt.ylabel(y_label)
-    for line in y:
-        plt.plot(x, line[0], label=line[1])
-    plt.grid()
-    plt.legend()
-    plt.savefig(f"plots/{name}.png")
-
-def get_sample_prob(dataset_str, imb):
-    dataset = dataloader.get_dataset(data_root[dataset_str], dataset_str, 'train', None, cifar_imb_ratio=imb)
-
-    language_input = dataset.get_lang_inputs()
-    p_matrix = get_sample_probability_matrix_softmax(model.get_text_features, language_input, tau[dataset_str], dataset.classes)
-    freq = dataset.get_freq()
-    p_i = freq / len(dataset)
-    p_i, idx_p_i = torch.sort(p_i, descending=True)
-    # [100, 100] * [1, 100]
-    p_matrix = p_matrix[:, idx_p_i]
-    mul = p_matrix * p_i
-    p_j = torch.sum( mul, dim=1 )
-    p = (p_i + p_j) / 2
-    y = (p_i, "LT"), (p, "Local Sampling")
-    imb = p_i.max()/p_i.min()
-    new_imb = p.max() / p.min()
-    print(f"New imbalance factor: {new_imb}")
-    create_sample_plot(f"{dataset_str} Sample Probability with imb factor {imb}", "y", "p(y)", range(freq.shape[0]), y, f"{dataset_str}imb={imb}")
-
-get_sample_prob("CIFAR100", 100)
-get_sample_prob("CIFAR100", 50)
-get_sample_prob("CIFAR100", 10)
-get_sample_prob("CIFAR10", 100)
-get_sample_prob("CIFAR10", 50)
-get_sample_prob("CIFAR10", 10)
-get_sample_prob("ImageNet", None)
-get_sample_prob("Places", None)
+ims_to_crop = [ 
+   "top-feat", "front-feat", "left-feat", "top-feat-ce", "front-feat-ce", "left-feat-ce", "top-feat-lfm-ce", "front-feat-lfm-ce", "left-feat-lfm-ce"
+]
+crop_ims(ims_to_crop)
