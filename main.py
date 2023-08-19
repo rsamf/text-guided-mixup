@@ -63,8 +63,6 @@ def setup_loss_fn(loss_str, model, language_input, freq):
         return CrossEntropyLoss(reduction='mean')
     if loss_str == 'BalCE':
         return losses.BalancedCE(freq, reduction='mean')
-    if loss_str == 'BalBCE':
-        return losses.BCE_loss(reduction='mean')
     if loss_str == 'Focal':
         return losses.FocalLoss()
     if loss_str == 'LDAM':
