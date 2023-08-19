@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import json
 import numpy as np
 
 alpha_ablation_x = [0, .2, .4, .6, .8, 1., 1.2, 1.4, 1.6, 1.8, 2.]
@@ -32,11 +33,12 @@ def create_graph(title, x_label, y_label, x, y, other_f=[]):
     plt.legend()
     plt.savefig(f"plots/{x_label}.png")
 
-create_graph("Effect on Different Values for Alpha", "Alpha", "Top-1 Accuracy", alpha_ablation_x, alpha_ablation_y)
-create_graph("Effect on Different Values for Tau", "Tau", "Top-1 Accuracy", tau_ablation_x, tau_ablation_y, [lambda plt: plt.xscale('log', base=5)])
+# create_graph("Effect on Different Values for Alpha", "Alpha", "Top-1 Accuracy", alpha_ablation_x, alpha_ablation_y)
+# create_graph("Effect on Different Values for Tau", "Tau", "Top-1 Accuracy", tau_ablation_x, tau_ablation_y, [lambda plt: plt.xscale('log', base=5)])
 
 ### T-SNE
 import torch
+import torch.nn.functional as F
 import random
 import os
 import clip
@@ -54,74 +56,106 @@ def get_text_features(text_input):
         clip_features = clip_features / norm
     return clip_features
 
-dataset = torchvision.datasets.CIFAR100(root="./dataset/CIFAR100", train=False)
+dataset = torchvision.datasets.CIFAR100(root="./dataset/CIFAR100", train=True)
 examples_labels = ['apple', 'pear', 'lobster', 'crab', 'snake', 'worm', 'bed', 'couch', 'bicycle', 'motorcycle']
 
 def find_indices(input, element):
     indices = [i for i,el in enumerate(input) if el == element]
     return indices
 
-def create_tsne_scatter(x, y, labels, title):
-    fig, ax = plt.subplots(figsize=(10, 8))
-    for cls_x, cls_y, cls_label in zip(x, y, labels):
-        ax.scatter(cls_x, cls_y, alpha=.8, label=cls_label, s=90)
-    fig.legend()
-    fig.savefig(f"plots/{title}.png")
+def create_tsne_scatter(x, y, z, labels, title):
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(7,7))
+    lines = []
+    lens = [len(cls_x) for cls_x in x]
+    for cls_x, cls_y, cls_z, cls_label in zip(x, y, z, labels):
+        print(cls_label, len(cls_x))
+        lines.append( ax.scatter(cls_x, cls_y, cls_z, alpha=.3) )
+
+    u = np.linspace(0, 2 * np.pi, 130)
+    v = np.linspace(0, np.pi, 70)
+
+    x = np.outer(np.cos(u), np.sin(v))
+    y = np.outer(np.sin(u), np.sin(v))
+    z = np.outer(np.ones(np.size(u)), np.cos(v))
+
+    # Use 3x the stride, no scipy zoom
+    ax.plot_surface(x, y, z, rstride=3, cstride=3, color='white', edgecolor='#cccccc20', shade=False, alpha=0)
+
+    # Comment out when generating scatter plots
+    legend_fig = plt.figure("Legend plot")
+    labels = [f"{label} ({len})" for label, len in zip(labels, lens)]
+    leg = legend_fig.legend(lines, labels, loc='center')
+    for lh in leg.legend_handles:
+        lh.set_alpha(1)
+    legend_fig.savefig('plots/scatter_legend.png', bbox_inches='tight')
+
+    fig.tight_layout()
+    ax.set_aspect('equal')
+    ax.axis('off')
+    # fig.savefig(f"plots/{title}.png", bbox_inches='tight')
+    fig.show()
 
 examples_indices = [dataset.classes.index(ex) for ex in examples_labels]
-img_max = 50
-examples_image_idx = [find_indices(dataset.targets, tgt)[:img_max] for tgt in examples_indices]
-min_num_images = 2
-cls_num = 10
-gamma = 1 / 50
-img_num_per_cls = [ int(img_max * (gamma ** (cls_idx / (cls_num - 1.0)))) for cls_idx in range(cls_num) ]
-examples_image_idx = [examples_image_idx[i][:img_num] for i,img_num in enumerate(img_num_per_cls)]
+examples_image_idx = [find_indices(dataset.targets, tgt) for tgt in examples_indices]
+
+with open("cls_freq/CIFAR-100-LT_IMBA100.json", "r") as f:
+    freqs = json.load(f)
+example_freqs = [freqs[idx] for idx in examples_indices]
+img_num_per_cls = example_freqs
+print(img_num_per_cls)
+
+cls_num = len(examples_labels)
+examples_image_idx = [ examples_image_idx[i][:img_num] for i,img_num in enumerate(img_num_per_cls)]
 examples_images = [torch.stack([preprocess(dataset[img_idx][0]) for img_idx in class_indices]) for class_indices in examples_image_idx]
 
-all_f_v = []
-for class_samples in examples_images:
-    f_v = encoders.encode_image(class_samples)
-    all_f_v.append(f_v)
-f_v = torch.cat(all_f_v, dim=0)
-print(f_v.shape)
+def get_tnse_output(model):
+    all_f_v = []
+    for class_samples in examples_images:
+        f_v = model(class_samples)
+        all_f_v.append(f_v)
+    f_v = torch.cat(all_f_v, dim=0)
 
-tsne = TSNE(random_state=1, metric="cosine")
-embs = tsne.fit_transform(f_v.view(-1, 512))
-# Add to dataframe for convenience
-x = torch.tensor(embs[:, 0])
-y = torch.tensor(embs[:, 1])
-print(x.shape, y.shape)
-x_view = []
-y_view = []
-for i in range(len(img_num_per_cls)):
-    start = 0 if i == 0 else img_num_per_cls[i-1]
-    end = img_num_per_cls[i]
-    x_view.append(x[start:end])
-    y_view.append(y[start:end])
+    tsne = TSNE(n_components=3, random_state=1, metric="cosine", n_iter=2000)
+    embs = tsne.fit_transform(f_v.view(-1, 512))
+    embs = torch.tensor(embs)
+    embs = F.normalize(embs, dim=-1)
+    x = embs[:, 0]
+    y = embs[:, 1]
+    z = embs[:, 2]
+    x_view = []
+    y_view = []
+    z_view = []
+    ptr = 0
+    for i in range(cls_num):
+        img_num = img_num_per_cls[i]
+        x_view.append(x[ptr:ptr+img_num])
+        y_view.append(y[ptr:ptr+img_num])
+        z_view.append(z[ptr:ptr+img_num])
+        ptr += img_num
+    return x_view, y_view, z_view
 
-print(len(x_view), len(y_view), x_view[0].shape)
-
-create_tsne_scatter(x_view, y_view, examples_labels, "Image Feature Space")
+# x, y, z = get_tnse_output(encoders.encode_image)
+# torch.save((x,y,z), "tempo0.pt")
+x, y, z = torch.load("tempo0.pt")
+create_tsne_scatter(x, y, z, examples_labels, "feat")
 
 ## After training
 from models.simple import SimpleCLIPModel 
 model = SimpleCLIPModel(device="cpu", backbone="ViT-B/16").to("cpu")
-model.load_state_dict(torch.load("params/decoupled_single_gpu_1.pt", map_location="cpu"))
 model.eval()
-f_l = get_text_features(examples_labels)
-all_f_v = []
-for class_samples in examples_images:
-    _, f_v = model(f_l, class_samples, 1)
-    all_f_v.append(f_v)
-f_v = torch.cat(all_f_v, dim=0)
 
-tsne = TSNE(random_state=1, metric="cosine")
-embs = tsne.fit_transform(f_v.view(-1, 512))
-# Add to dataframe for convenience
-x = torch.tensor(embs[:, 0])
-y = torch.tensor(embs[:, 1])
-# x = x.view(10, -1)
-# y = y.view(10, -1)
 
-create_tsne_scatter(x, y, examples_labels, "Image Feature Space After Training")
+## After training with CE
+model.load_state_dict(torch.load("params/cifar_100_ce/decoupled_single_gpu_0_0.pt", map_location="cpu"))
+x, y, z = get_tnse_output(model.get_visual_features)
+torch.save((x,y,z), "tempo-ce.pt")
+create_tsne_scatter(x, y, z, examples_labels, "feat-ce")
+
+
+## After training with LFM + CE
+model.load_state_dict(torch.load("params/decoupled_single_gpu_1.pt", map_location="cpu"))
+# x, y, z = get_tnse_output(model.get_visual_features)
+# torch.save((x,y,z), "tempo1.pt")
+x, y, z = torch.load("tempo1.pt")
+create_tsne_scatter(x, y, z, examples_labels, "feat-lfm-ce")
 

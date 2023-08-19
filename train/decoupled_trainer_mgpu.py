@@ -1,15 +1,12 @@
 import torch
 import torch.optim as optim
-import torch.nn.functional as F
 from utils import Evaluator, Validator
-from mixups import LocalFeatureMixup
 import torch.distributed as dist
 from tqdm import tqdm
 
-def train(model, device, world_size, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, checkpoint=None, main_device=0):
+def train(model, device, world_size, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, mixer, writer, checkpoint=None, main_device=0):
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn, device, True, world_size)
     validator = Validator(model, f_l, val_loader, train_set.get_class_subdivisions(), loss_fn, device, True, world_size)
-    mixer = LocalFeatureMixup(alpha, freq)
 
     def report_metrics(step, only_validate=False):
         # Log validation accuracy
@@ -25,16 +22,13 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
                 writer.add_scalar("Validation/Accuracy/Few", few.item(), step)
             writer.add_scalar("Validation/AvgLoss", validator_loss.item(), step)
         if not only_validate:
-            training_loss = evaluator.loss(use_one_hot=alpha!=None)
+            training_loss = evaluator.loss(use_one_hot=mixer!=None)
             if device == main_device:
                 writer.add_scalar("Train/AvgLoss", training_loss.item(), step)
             evaluator.refresh()
 
-    def train_step_lfm(batch, optimizer, phase):
-        x, y, _ = batch
-        x_i, x_j = x
-        y_i, y_j = y
-        x, y, _ = mixer.mix(x_i, y_i, x_j, y_j)
+    def train_step(batch, optimizer, phase):
+        x, y = batch
         x = x.to(device)
         y = y.to(device)
         optimizer.zero_grad()
@@ -42,13 +36,11 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
         loss = loss_fn(pred, y)
         loss.backward()
         optimizer.step()
-        # y_no_offset.to(device)
-        # evaluator.update(pred, None, y, y_no_offset)
         del loss, pred
 
     step = 0
     optimizers = [optim.Adam(model.module.clip_params(), lr[0]), optim.Adam(model.module.fc_params(), lr[1])]
-    train_steps = [train_step_lfm, train_step_lfm]
+    train_steps = [train_step, train_step]
     phase_start = 0
     epoch_start = 0
     optimizer_state = None
@@ -59,10 +51,11 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
         map_location = {'cuda:0': 'cuda:%d' % device}
         checkpoint_cfg = torch.load(checkpoint, map_location=map_location)
         model_state = checkpoint_cfg['model']
-        scheduler = checkpoint_cfg['lr_scheduler']
+        # model_state['fc.bias'] = torch.zeros(1024)
         model.module.load_state_dict(model_state)
+        phase_start = 1
     for phase in range(phase_start, 2):
-        mixer.set_alpha(phase)
+        mixer.set_phase(phase)
         optimizer = optimizers[phase]
         if optimizer_state != None:
             optimizer.load_state_dict(optimizer_state)
@@ -88,6 +81,6 @@ def train(model, device, world_size, train_set, train_loader, val_loader, f_l, l
                     'scheduler': scheduler.state_dict(),
                     'model': model.module.state_dict()
                 }
-                torch.save(checkpoint, f"mpgpu_{phase}_a.pt")
+                torch.save(checkpoint, f"mpgpu_{phase}.pt")
 
  

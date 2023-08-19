@@ -2,13 +2,11 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 from utils import Evaluator, Validator
-from mixups import LocalFeatureMixup, Mixup, Remix
 from tqdm import tqdm
 
-def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, checkpoint=None):
+def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epochs, lr, mixer, writer, checkpoint=None):
     evaluator = Evaluator(train_set.get_class_subdivisions(), loss_fn, device)
     validator = Validator(model, f_l, val_loader, train_set.get_class_subdivisions(), loss_fn, device)
-    mixer = LocalFeatureMixup(alpha, freq)
 
     def report_metrics(step, only_validate=False):
         # Log validation accuracy
@@ -23,21 +21,20 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
             writer.add_scalar("Validation/Accuracy/Few", few.item(), step)
         writer.add_scalar("Validation/AvgLoss", validator_loss.item(), step)
         if not only_validate:
-            training_loss = evaluator.loss(use_one_hot=alpha!=None)
-            writer.add_scalar("Train/AvgLoss", training_loss.item(), step)
+            # training_loss = evaluator.loss(use_one_hot=mixer!=None)
+            # writer.add_scalar("Train/AvgLoss", training_loss.item(), step)
             evaluator.refresh()
 
     def train_step_default(batch, optimizer, phase):
         x, y, _ = batch
         x = x.to(device)
         y = y.to(device)
-        y_hot = F.one_hot(y, freq.shape[0]).to(torch.float)
         optimizer.zero_grad()
         pred, _ = model(f_l, x, phase)
         loss = loss_fn(pred, y)
         loss.backward()
         optimizer.step()
-        evaluator.update(pred, y, y_hot)
+        evaluator.update(pred, y)
 
     def train_step_mixup(batch, optimizer, phase):
         x, y, _ = batch
@@ -65,10 +62,7 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
         evaluator.update(pred, None, y)
 
     def train_step_lfm(batch, optimizer, phase):
-        x, y, _ = batch
-        x_i, x_j = x
-        y_i, y_j = y
-        x, y, y_no_offset = mixer.mix(x_i, y_i, x_j, y_j)
+        x, y = batch
         x = x.to(device)
         y = y.to(device)
         optimizer.zero_grad()
@@ -76,12 +70,11 @@ def train(model, device, train_set, train_loader, val_loader, f_l, loss_fn, epoc
         loss = loss_fn(pred, y)
         loss.backward()
         optimizer.step()
-        y_no_offset.to(device)
-        evaluator.update(pred, None, y, y_no_offset) 
+        del loss, pred
 
     step = 0
     optimizers = [optim.Adam(model.clip_params(), lr[0]), optim.Adam(model.fc_params(), lr[1])]
-    if alpha == None:
+    if mixer == None:
         train_steps = [train_step_default, train_step_default]
     else:
         train_steps = [train_step_lfm, train_step_lfm]
