@@ -49,10 +49,11 @@ class Evaluator():
         self.med_mask = torch.tensor([1. if c == "med" else 0. for c in self.class_subdivisions]).to(self.device)
         self.few_mask = torch.tensor([1. if c == "few" else 0. for c in self.class_subdivisions]).to(self.device)
 
-    def update(self, logits, tgts, tgts_one_hot, tgts_no_offset=None):
+    def update(self, logits, tgts, tgts_one_hot=None, tgts_no_offset=None):
         self.logits.append(logits)
         self.tgts.append(tgts)
-        self.tgts_one_hot.append(tgts_one_hot)
+        if tgts_one_hot != None:
+            self.tgts_one_hot.append(tgts_one_hot)
         if tgts_no_offset != None:
             self.tgts_no_offset.append(tgts_no_offset)
 
@@ -190,12 +191,16 @@ def show_closest_to(prob_set, class_list, top_k=6):
             to_print += f"({class_list[idx[i][j]]}, {val[i][j]:.5f}) "
         print(to_print)
 
-def get_text_distances(language_model, language_input):
+def get_text_similarities(language_model, language_input):
     with torch.no_grad():
         f = language_model(language_input)
+        f_norm = L.vector_norm(f, dim=1, keepdim=True)
+        f = f / f_norm
+        cos_sim = f @ f.T
 
-    f_norm = L.vector_norm(f, dim=1, keepdim=True)
-    f = f / f_norm
-    cos_sim = f @ f.T
+    return cos_sim
+
+def get_text_distances(language_model, language_input):
+    cos_sim = get_text_similarities(language_model, language_input)
     dist = 1-cos_sim
     return dist

@@ -41,13 +41,18 @@ class SimpleCLIPModel(nn.Module):
         f_l_norm = f_l.norm(dim=-1, keepdim=True)
         similarity = (f_v / f_v_norm) @ (f_l / f_l_norm).T
         return similarity
+    
+    def get_visual_features(self, img_input):
+        f_v = self.visual(img_input)
+        f_v = self.fc(f_v)
+        return f_v
 
     def forward(self, f_l, image_input, phase):
         if phase == 0:
-            f_v = self.visual(image_input)#.to(dtype=torch.float)
+            f_v = self.visual(image_input)
         else:
             with torch.no_grad():
-                clip_features = self.visual(image_input)#.to(dtype=torch.float)
+                clip_features = self.visual(image_input)
             f_v = self.fc(clip_features)
         f_v = f_v.to(torch.float)
         f_v_norm = f_v.norm(dim=-1, keepdim=True)

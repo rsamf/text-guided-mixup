@@ -1,5 +1,5 @@
 import argparse
-from utils import get_sample_probability_matrix_softmax, get_text_distances
+from utils import get_sample_probability_matrix_softmax, get_text_distances, get_text_similarities
 from train import decoupled_trainer, decoupled_trainer_mgpu
 from models.simple import SimpleCLIPModel
 from data import dataloader
@@ -16,6 +16,7 @@ from torch.distributed import init_process_group, destroy_process_group
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
+from mixups import LocalFeatureMixup
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -88,21 +89,25 @@ def multi_gpu_train(device, num_gpus, backbone, train_set, val_set, batch_size, 
     writer = SummaryWriter(logdir)
     model = SimpleCLIPModel(device, backbone).to(device)
     model = DDP(model, device_ids=[device], find_unused_parameters=True)
-    train_loader = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix, multi_gpu=True)
+    mixer = LocalFeatureMixup(alpha, freq) if alpha != None else None
+
+    train_loader = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix, mixer=mixer, multi_gpu=True)
     train_loaders = [train_loader, train_loader]
     val_loader = dataloader.get_dataloader(val_set, batch_size*num_gpus, multi_gpu=True, drop_last=True)
     f_l = f_l.to(device)
-    decoupled_trainer_mgpu.train(model, device, num_gpus, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, args.checkpoint, main_device=1)
+    decoupled_trainer_mgpu.train(model, device, num_gpus, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, mixer, writer, args.checkpoint, main_device=1)
     destroy_process_group()
 
 def single_gpu_train(device, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir):
     writer = SummaryWriter(logdir)
     model = SimpleCLIPModel(device, backbone).to(device)
-    train_loader = dataloader.get_dataloader(train_set, batch_size, p_matrix=p_matrix)
+    mixer = LocalFeatureMixup(alpha, freq) if alpha != None else None
+
+    train_loader = dataloader.get_dataloader(train_set, batch_size, mixer=mixer, p_matrix=p_matrix)
     train_loaders = [train_loader, train_loader]
     val_loader = dataloader.get_dataloader(val_set, batch_size)
     f_l = f_l.to(device)
-    decoupled_trainer.train(model, device, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, alpha, freq, writer, args.checkpoint)
+    decoupled_trainer.train(model, device, train_set, train_loaders, val_loader, f_l, loss_fn, epochs, lr, mixer, writer, args.checkpoint)
 
 def main(yml):
     epochs = yml.get("epochs")
