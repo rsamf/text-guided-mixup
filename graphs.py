@@ -108,54 +108,95 @@ cls_num = len(examples_labels)
 examples_image_idx = [ examples_image_idx[i][:img_num] for i,img_num in enumerate(img_num_per_cls)]
 examples_images = [torch.stack([preprocess(dataset[img_idx][0]) for img_idx in class_indices]) for class_indices in examples_image_idx]
 
-def get_tnse_output(model):
+def get_model_tsne(model, title):
     all_f_v = []
     for class_samples in examples_images:
         f_v = model(class_samples)
         all_f_v.append(f_v)
-    f_v = torch.cat(all_f_v, dim=0)
+    f_v = torch.stack(all_f_v)
 
-    tsne = TSNE(n_components=3, random_state=1, metric="cosine", n_iter=2000)
+    tsne = TSNE(random_state=1, metric="cosine")
     embs = tsne.fit_transform(f_v.view(-1, 512))
-    embs = torch.tensor(embs)
-    embs = F.normalize(embs, dim=-1)
-    x = embs[:, 0]
-    y = embs[:, 1]
-    z = embs[:, 2]
-    x_view = []
-    y_view = []
-    z_view = []
-    ptr = 0
-    for i in range(cls_num):
-        img_num = img_num_per_cls[i]
-        x_view.append(x[ptr:ptr+img_num])
-        y_view.append(y[ptr:ptr+img_num])
-        z_view.append(z[ptr:ptr+img_num])
-        ptr += img_num
-    return x_view, y_view, z_view
+    # Add to dataframe for convenience
+    x = torch.tensor(embs[:, 0])
+    y = torch.tensor(embs[:, 1])
+    x = x.view(10, -1)
+    y = y.view(10, -1)
 
-# x, y, z = get_tnse_output(encoders.encode_image)
-# torch.save((x,y,z), "tempo0.pt")
-x, y, z = torch.load("tempo0.pt")
-create_tsne_scatter(x, y, z, examples_labels, "feat")
+    create_tsne_scatter(x, y, examples_labels, title)
 
 ## After training
 from models.simple import SimpleCLIPModel 
-model = SimpleCLIPModel(device="cpu", backbone="ViT-B/16").to("cpu")
+model = SimpleCLIPModel(device="cpu", backbone="ViT-B/32").to("cpu")
 model.eval()
+f_l = get_text_features(examples_labels)
+
+def model_fn(img):
+    _, f_v = model(f_l, img, 1)
+    return f_v
+
+# get_model_tsne(encoders.encode_image, "Image Feature Space")
+# model.load_state_dict(torch.load("decoupled_single_gpu_0_0.pt", map_location="cpu"))
+# get_model_tsne(model_fn, "Image Feature Space After Training")
+# model.load_state_dict(torch.load("decoupled_single_gpu_1_0.pt", map_location="cpu"))
+# get_model_tsne(model_fn, "Image Feature Space After Training Phase 1")
 
 
-## After training with CE
-model.load_state_dict(torch.load("params/cifar_100_ce/decoupled_single_gpu_0_0.pt", map_location="cpu"))
-x, y, z = get_tnse_output(model.get_visual_features)
-torch.save((x,y,z), "tempo-ce.pt")
-create_tsne_scatter(x, y, z, examples_labels, "feat-ce")
+## Sample Probability
+from data import dataloader
+from utils import get_sample_probability_matrix_softmax
 
+data_root = {
+    'ImageNet': './dataset/ImageNet',
+    'iNaturalist18': './dataset/iNaturalist18',
+    "Places": "./dataset/Places",
+    'CIFAR10': './dataset/CIFAR10',
+    'CIFAR100': './dataset/CIFAR100',
+}
 
-## After training with LFM + CE
-model.load_state_dict(torch.load("params/decoupled_single_gpu_1.pt", map_location="cpu"))
-# x, y, z = get_tnse_output(model.get_visual_features)
-# torch.save((x,y,z), "tempo1.pt")
-x, y, z = torch.load("tempo1.pt")
-create_tsne_scatter(x, y, z, examples_labels, "feat-lfm-ce")
+tau = {
+    'CIFAR10': .05,
+    'CIFAR100': .05,
+    'ImageNet': .05,
+    "Places": .5,
+}
 
+def create_sample_plot(title, x_label, y_label, x, y, name):
+    plt.clf()
+    plt.cla()
+    # plt.title(title)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    for line in y:
+        plt.plot(x, line[0], label=line[1])
+    plt.grid()
+    plt.legend()
+    plt.savefig(f"plots/{name}.png")
+
+def get_sample_prob(dataset_str, imb):
+    dataset = dataloader.get_dataset(data_root[dataset_str], dataset_str, 'train', None, cifar_imb_ratio=imb)
+
+    language_input = dataset.get_lang_inputs()
+    p_matrix = get_sample_probability_matrix_softmax(model.get_text_features, language_input, tau[dataset_str], dataset.classes)
+    freq = dataset.get_freq()
+    p_i = freq / len(dataset)
+    p_i, idx_p_i = torch.sort(p_i, descending=True)
+    # [100, 100] * [1, 100]
+    p_matrix = p_matrix[:, idx_p_i]
+    mul = p_matrix * p_i
+    p_j = torch.sum( mul, dim=1 )
+    p = (p_i + p_j) / 2
+    y = (p_i, "LT"), (p, "Local Sampling")
+    imb = p_i.max()/p_i.min()
+    new_imb = p.max() / p.min()
+    print(f"New imbalance factor: {new_imb}")
+    create_sample_plot(f"{dataset_str} Sample Probability with imb factor {imb}", "y", "p(y)", range(freq.shape[0]), y, f"{dataset_str}imb={imb}")
+
+get_sample_prob("CIFAR100", 100)
+get_sample_prob("CIFAR100", 50)
+get_sample_prob("CIFAR100", 10)
+get_sample_prob("CIFAR10", 100)
+get_sample_prob("CIFAR10", 50)
+get_sample_prob("CIFAR10", 10)
+get_sample_prob("ImageNet", None)
+get_sample_prob("Places", None)
