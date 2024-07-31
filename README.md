@@ -1,8 +1,9 @@
-# Text Supervised LFM
+<h1 align="center">Text Supervised LFM</h1>
+<p align="center">
+  <img justify="center" src="assets/arch.jpg" alt="Model Architecture"/>
+</p>
 
-![arch](assets/arch.png)
-
-This contains the implementation for local feature mixup as well as the training procedure.
+This contains the implementation for local feature mixup and the training procedure.
 
 Example usage:
 ```
