@@ -9,16 +9,11 @@ import os
 from PIL import Image
 from data.ImbalanceCIFAR import IMBALANCECIFAR10, IMBALANCECIFAR100
 from data.ImageNetClasses import IMAGENET_CLASSES
-from data.iNaturalist18Classes import get_class_names as get_inat_class_names
 from data.PlacesClasses import PLACES_CLASSES
 from functools import partial
 
 # Image statistics
 RGB_statistics = {
-    'iNaturalist18': {
-        'mean': [0.466, 0.471, 0.380],
-        'std': [0.195, 0.194, 0.192]
-    },
     'default': {
         'mean': [0.485, 0.456, 0.406],
         'std':[0.229, 0.224, 0.225]
@@ -192,9 +187,6 @@ def get_dataset(data_root, dataset, phase, model_preprocess, cifar_imb_ratio=Non
     elif dataset == 'ImageNet':
         txt = './data/%s/%s_%s.txt'%(dataset, dataset, phase)
         set_ = LT_Dataset(data_root, txt, dataset, IMAGENET_CLASSES, transform=transform)
-    elif dataset == 'iNaturalist18':
-        txt = './data/%s/%s_%s.txt'%(dataset, dataset, phase)
-        set_ = LT_Dataset(data_root, txt, dataset, get_inat_class_names(), transform=transform)
     elif dataset == 'Places':
         txt = './data/%s/%s_%s.txt'%(dataset, dataset, phase)
         set_ = LT_Dataset(data_root, txt, dataset, PLACES_CLASSES, transform=transform)
