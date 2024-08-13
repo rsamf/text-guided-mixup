@@ -1,48 +1,60 @@
-<h1 align="center">Text Supervised LFM</h1>
-<p align="center">
-  <img justify="center" src="assets/arch.jpg" alt="Model Architecture"/>
+<div align="center">
+<h1>Text-Guided Mixup Towards Long-Tailed Image Categorization</h1>
+
+<p>
+  BMVC 2024
+
+  [Richard Franklin](https://rsamf.github.io/),
+  [Jiawei Yao](https://alexander-yao.github.io/),
+  [Deyang](),
+  [Qi Qian](https://scholar.google.com/citations?user=Rp_40_gAAAAJ&hl=en&oi=ao),
+  [Juhua Hu](http://faculty.washington.edu/juhuah/)*
 </p>
 
-This contains the implementation for local feature mixup and the training procedure.
+  | ![Model Architecture](assets/arch.jpg) | 
+  |:--:| 
+  | *Model architecture with LFM used to extend the decision boundary of minor classes towards nearby classes* |
 
-Example usage:
-```
-python main.py --cfg config/general.yaml config/imagenet.yaml config/proposed/lfm-mms.yaml
-```
+</div>
 
-## LFM
+## Requirements
+ - We recommend Linux for performance and compatibility reasons.
+ - 1 NVIDIA GPUs. We developed and trained the model using RTX 2080 Ti (11GB).
 
-- Local Sampling is defined as a PyTorch Sampler called LocalClassSampler, which is located in `data/dataloader.py`.
-- All Label shift and other mixup procedures are defined inside `mixups.py`.
+## Getting started
+### Datasets
+- [x] CIFAR100
+- [x] CIFAR10
+- [x] Places365
+- [x] Imagenet 2012
 
 
-## Configuration
-
-You may specify configuration through one or more yaml files with the `--cfg` flag. If multiple yaml files are specified like the following example, then they are merged together to form one configuration. Note that the `--cfg` flag only needs to be specified once.
-
+### Training and evaluation
+CIFAR100 dataset
 ```
 python main.py --cfg config/general.yaml config/proposed/lfm-mms.yaml
 ```
 
-If multiple yaml files contain a definition for a field, then the last-mentioned yaml file in the command line args overwrites all preceding specifications of that particular field. Observing the above example, `use_lfm` will be set to true.
-
-Current list of configuration fields:
+CIFAR10 dataset
 ```
-loss: string, must be one of: "CE", "BalCE", "Focal", "LDAM", "MMS"
-dataset: string, must be one of: "CIFAR100", "CIFAR10", "ImageNet", "Places", "iNaturalist18"
-cifar_imb: int, imbalance ratio if a CIFAR dataset is specified
-epochs: [int, int], epochs for phase 0 and 1
-lr: [float, float], learning rates for phase 0 and 1
-use_lfm: bool, whether to use lfm or not
-alpha: float, label shift intensity
-tau: float, local sample intensity (lower is more)
-batch_size: int
-backbone: string, must be one of: "RN50", "RN50x16", "RN101", "ViT-B/32", "ViT-B/16"
+python main.py --cfg config/general.yaml config/cifar10.yaml config/proposed/lfm-mms.yaml
 ```
 
-## CLI Args
+Places365 dataset
 ```
---cfg: string, specifies one or more configuration files (see above)
---gpu: int, if on an environment with multiple gpus, but you want to use a single gpu, then use this to specify which gpu you want to train on
---checkpoint: string, specify a checkpoint to continue phase 1 training
+python main.py --cfg config/general.yaml config/places.yaml config/proposed/lfm-mms.yaml
 ```
+
+Imagenet dataset
+```
+python main.py --cfg config/general.yaml config/imagenet.yaml config/proposed/lfm-mms.yaml
+```
+
+
+<!-- ## Bibtex
+Please cite our paper if you use this code in your own work:
+```
+``` -->
+
+## Acknowledgement
+This research is supported in part by Advata Gift and National Science Foundation funding. All opinions, findings, conclusions and recommendations in this paper are those of the author and do not necessarily reflect the views of the funding agencies.
