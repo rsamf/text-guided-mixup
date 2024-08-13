@@ -20,6 +20,7 @@
 ## Requirements
  - We recommend Linux for performance and compatibility reasons.
  - 1 NVIDIA GPUs. We developed and trained the model using RTX 2080 Ti (11GB).
+ - Python dependencies are located in `requirements.txt`
 
 ## Getting started
 ### Datasets
@@ -32,12 +33,12 @@
 ### Training and evaluation
 CIFAR100 dataset
 ```
-python main.py --cfg config/general.yaml config/proposed/lfm-mms.yaml
+python main.py --cfg config/general.yaml config/proposed/lfm-mms.yaml --gpu 0
 ```
 
 CIFAR10 dataset
 ```
-python main.py --cfg config/general.yaml config/cifar10.yaml config/proposed/lfm-mms.yaml
+python main.py --cfg config/general.yaml config/cifar10.yaml config/proposed/lfm-mms.yaml --gpu 0
 ```
 
 Places365 dataset
