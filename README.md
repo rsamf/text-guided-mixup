@@ -24,10 +24,10 @@
 
 ## Getting started
 ### Datasets
-- [x] CIFAR100
-- [x] CIFAR10
+- [x] CIFAR100-LT
+- [x] CIFAR10-LT
 - [x] Places365
-- [x] Imagenet 2012
+- [x] Imagenet-LT
 
 
 ### Training and evaluation
