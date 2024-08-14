@@ -1,5 +1,5 @@
 dataset: ImageNet
-lr: [.000005, .005]
-epochs: [100, 10]
-tau: .5
+lr: [.000005, .01]
+epochs: [30, 10]
+tau: .05
 backbone: ViT-B/16
