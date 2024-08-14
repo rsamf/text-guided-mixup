@@ -6,7 +6,7 @@
 
   [Richard Franklin](https://rsamf.github.io/),
   [Jiawei Yao](https://alexander-yao.github.io/),
-  [Deyang](),
+  Deyang Zhong,
   [Qi Qian](https://scholar.google.com/citations?user=Rp_40_gAAAAJ&hl=en&oi=ao),
   [Juhua Hu](http://faculty.washington.edu/juhuah/)*
 </p>
