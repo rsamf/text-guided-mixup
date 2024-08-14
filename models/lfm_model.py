@@ -10,9 +10,9 @@ FEAT_DIMS = {
     "ViT-B/32": 512,
     "ViT-B/16": 512
 }
-class SimpleCLIPModel(nn.Module):
+class LFMModel(nn.Module):
     def __init__(self, device, backbone="RN50"):
-        super(SimpleCLIPModel, self).__init__()
+        super(LFMModel, self).__init__()
         # Setup encoders
         self.device = device
         encoders, self.preprocess = clip.load(backbone, device)

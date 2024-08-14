@@ -1,7 +1,7 @@
 import argparse
 from utils import get_sample_probability_matrix_softmax, get_text_distances, get_text_similarities
 from train import decoupled_trainer, decoupled_trainer_mgpu
-from models.simple import SimpleCLIPModel
+from models.lfm_model import LFMModel
 from data import dataloader
 from torch.nn import CrossEntropyLoss
 import os
@@ -84,7 +84,7 @@ def ddp_setup(rank: int, world_size: int):
 def multi_gpu_train(device, num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir):
     ddp_setup(device, num_gpus)
     writer = SummaryWriter(logdir)
-    model = SimpleCLIPModel(device, backbone).to(device)
+    model = LFMModel(device, backbone).to(device)
     model = DDP(model, device_ids=[device], find_unused_parameters=True)
     mixer = LocalFeatureMixup(alpha, freq) if alpha != None else None
 
@@ -97,7 +97,7 @@ def multi_gpu_train(device, num_gpus, backbone, train_set, val_set, batch_size, 
 
 def single_gpu_train(device, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir):
     writer = SummaryWriter(logdir)
-    model = SimpleCLIPModel(device, backbone).to(device)
+    model = LFMModel(device, backbone).to(device)
     mixer = LocalFeatureMixup(alpha, freq) if alpha != None else None
 
     train_loader = dataloader.get_dataloader(train_set, batch_size, mixer=mixer, p_matrix=p_matrix)
@@ -119,7 +119,7 @@ def main(yml):
     backbone = yml.get("backbone")
 
     dr = data_root[dataset_str]
-    setup_model = SimpleCLIPModel("cpu", backbone)
+    setup_model = LFMModel("cpu", backbone)
     train_set = dataloader.get_dataset(dr, dataset_str, 'train', setup_model.preprocess, cifar_imb_ratio=cifar_imb)
     val_set = dataloader.get_dataset(dr, dataset_str, 'val', setup_model.preprocess)
     # Get Language Input and Sample Probability Matrix
@@ -140,7 +140,7 @@ def main(yml):
     loss_fn = setup_loss_fn(loss_str, setup_model, train_set.get_lang_inputs(), freq)
     date = datetime.now().strftime('%b%d-%H-%M-%S')
     logdir = f'runs/{loss_str}-{date}'
-    num_gpus = torch.cuda.device_count() - 1 # Dont use last one
+    num_gpus = torch.cuda.device_count()
     if num_gpus > 1 and args.gpu == None:
         print("Multi GPU Training")
         mp.spawn(multi_gpu_train, args=(num_gpus, backbone, train_set, val_set, batch_size, p_matrix, f_l, loss_fn, epochs, lr, alpha, freq, logdir), nprocs=num_gpus)
