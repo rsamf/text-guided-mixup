@@ -19,14 +19,14 @@
 
 ## Requirements
  - We recommend Linux for performance and compatibility reasons.
- - 1 NVIDIA GPUs. We developed and trained the model using RTX 2080 Ti (11GB).
+ - 1 NVIDIA GPU for CIFAR10/100-LT, and 3 for Imagenet-LT and Places-LT. Each GPU that we trained the model with was an RTX 2080 Ti (11GB).
  - Python dependencies are located in `requirements.txt`
 
 ## Getting started
 ### Datasets
 - [x] CIFAR100-LT
 - [x] CIFAR10-LT
-- [x] Places365
+- [x] Places-LT
 - [x] Imagenet-LT
 
 

@@ -2,4 +2,3 @@ dataset: CIFAR10
 lr: [.000000001, .5]
 epochs: [10, 10]
 cifar_imb: 10
-loss: LDAM
