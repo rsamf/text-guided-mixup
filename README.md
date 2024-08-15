@@ -58,4 +58,4 @@ Please cite our paper if you use this code in your own work:
 ``` -->
 
 ## Acknowledgement
-This research is supported in part by Advata Gift and National Science Foundation funding. All opinions, findings, conclusions and recommendations in this paper are those of the author and do not necessarily reflect the views of the funding agencies.
+Yao and Hu's research is supported in part by NSF (IIS-2104270) and Advata Gift Funding. Zhong's research is supported in part by the Carwein-Andrews Graduate Fellowship and Advata Gift Funding. All opinions, findings, conclusions and recommendations in this paper are those of the author and do not necessarily reflect the views of the funding agencies.
